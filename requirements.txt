@@ -1,0 +1,22 @@
+# --- Core Orchestration & State Machine ---
+langchain>=1.2.0
+langgraph>=1.0.8
+langchain-community>=0.3.0
+langchain-core>=0.3.0
+
+# --- LLM & Multimodal (Gemini 2.0 API) ---
+google-genai>=0.1.0        # The modern 2026 SDK for Gemini 2.0
+pillow>=10.2.0              # Image processing for handwritten answers
+
+# --- Vector Database & Embeddings ---
+chromadb>=1.4.1             # Vector DB with Metadata filtering
+sentence-transformers>=3.0.0 # Local embeddings for semantic check
+
+# --- Evaluation & Validation ---
+ragas>=0.4.3                # Evaluation framework (Faithfulness, Relevance)
+pydantic>=2.6.0             # Structured data for Strong/Weak analysis
+
+# --- UI & Visuals ---
+streamlit>=1.35.0           # Dashboard & Student Interface
+plotly>=5.20.0              # Radar charts for skill mapping
+python-dotenv>=1.0.1        # For managing .env API keys
