@@ -60,28 +60,79 @@ The system helps students practice exams, receive instant feedback, and identify
 ```
 .
 ├── Backend
-│   ├── main.py
-│   ├── routes
-│   │   ├── auth.py
-│   │   ├── exam.py
-│   │   └── results.py
-│   ├── src
-│   │   ├── graph.py
-│   │   ├── retriever.py
-│   │   ├── rag_setup.py
-│   │   └── nodes
-│   ├── Data
-│   └── chroma_db
-│
+│   ├── Data
+│   │   ├── sem3
+│   │   │   ├── DBMS
+│   │   │   │   ├── NOTES
+│   │   │   │   │   └── notes.txt
+│   │   │   │   └── PYQ
+│   │   │   │       ├── dbms_pyq1.txt
+│   │   │   │       ├── dbms_pyq2.txt
+│   │   │   │       ├── dbms_pyq3.txt
+│   │   │   │       ├── dbms_pyq4.txt
+│   │   │   │       └── dbms_pyq5.txt
+│   │   │   └── DSA
+│   │   │       ├── NOTES
+│   │   │       │   └── notes.txt
+│   │   │       └── PYQ
+│   │   │           ├── cpp_pyq1.txt
+│   │   │           ├── cpp_pyq2.txt
+│   │   │           └── cpp_pyq3.txt
+│   │   └── sem4
+│   ├── firebase_key.json
+│   ├── main.py
+│   └── src
+│       ├── config.py
+│       ├── firebase_config.py
+│       ├── graph.py
+│       ├── nodes
+│       │   ├── critic.py
+│       │   ├── generator.py
+│       │   ├── grader.py
+│       │   ├── ingest.py
+│       │   └── vision.py
+│       ├── rag_setup.py
+│       ├── retriever.py
+│       ├── state.py
+│       └── utils
 ├── Frontend
-│   ├── src
-│   │   ├── components
-│   │   ├── Pages
-│   │   ├── api
-│   │   └── firebase
-│   └── package.json
-│
-└── requirements.txt
+│   ├── eslint.config.js
+│   ├── index.html
+│   ├── package-lock.json
+│   ├── package.json
+│   ├── postcss.config.cjs
+│   ├── public
+│   │   ├── favicon.svg
+│   │   └── icons.svg
+│   ├── README.md
+│   ├── src
+│   │   ├── api
+│   │   │   └── api.js
+│   │   ├── App.css
+│   │   ├── App.jsx
+│   │   ├── components
+│   │   │   ├── AILoader.jsx
+│   │   │   ├── Header.jsx
+│   │   │   ├── QuestionCard.jsx
+│   │   │   ├── ScoreCard.jsx
+│   │   │   └── Sidebar.jsx
+│   │   ├── firebase
+│   │   │   └── firebase.js
+│   │   ├── index.css
+│   │   ├── main.jsx
+│   │   └── Pages
+│   │       ├── Dashboard.jsx
+│   │       ├── Exam.jsx
+│   │       ├── History.jsx
+│   │       ├── Login.jsx
+│   │       └── Results.jsx
+│   ├── structure.txt
+│   ├── tailwind.config.js
+│   └── vite.config.js
+├── requirements.txt
+
+25 directories, 56 files
+
 ```
 
 ---
