@@ -1,0 +1,25 @@
+DBMS Examination Practice Paper
+Total Marks: 40 | Time: 90 Minutes
+Section A: Short Answer Questions (2 Marks Each)
+Answer all questions. (5 × 2 = 10 Marks)
+
+What is an Identifying Relationship in ER Model?
+Define Consistency in ACID.
+What is a Composite Attribute? Give an example.
+What is a Checkpoint in recovery?
+Define NoSQL Database. Name any two types.
+
+Section B: Intermediate Concepts (3 Marks Each)
+Answer all questions. (4 × 3 = 12 Marks)
+6. Explain the role of DBA in database security and administration.
+7. Describe Cartesian Product (×) and Join operations in Relational Algebra.
+8. What are the types of file organizations? Briefly explain Heap and Sequential files.
+9. Differentiate between DBMS and RDBMS (any four points).
+Section C: Applied Theory (4 Marks Each)
+Answer all questions. (2 × 4 = 8 Marks)
+10. Explain Participation Constraints in ER Model (Total vs Partial) with examples.
+11. Discuss types of failures in databases (Transaction, System crash, Disk failure) and role of log-based recovery.
+Section D: Long Answer Questions (5 Marks Each)
+Answer all questions. (2 × 5 = 10 Marks)
+12. Explain the Three-Schema Architecture in detail. Discuss why data independence is vital and how logical/physical independence is achieved.
+13. What are Distributed Databases? Explain their characteristics (Transparency, Reliability, Scalability) and types (Homogeneous vs Heterogeneous).

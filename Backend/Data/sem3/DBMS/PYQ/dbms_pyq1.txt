@@ -1,0 +1,25 @@
+DBMS Examination Practice Paper
+Total Marks: 40 | Time: 90 Minutes
+Section A: Short Answer Questions (2 Marks Each)
+Answer all questions. (5 × 2 = 10 Marks)
+
+Define DBMS and list any four key objectives of a DBMS.
+What is Data Redundancy? How does DBMS reduce it compared to file systems?
+Define Logical Data Independence.
+What is a Primary Key? Mention one constraint associated with it.
+List the ACID properties with one-line meaning for each.
+
+Section B: Intermediate Concepts (3 Marks Each)
+Answer all questions. (4 × 3 = 12 Marks)
+6. Compare File System and DBMS approach in terms of data consistency, security, and concurrency control.
+7. Explain the three levels of the ANSI/SPARC Three-Schema Architecture with brief roles.
+8. Describe the types of attributes in ER Model (Simple/Composite, Single-valued/Multi-valued, Derived).
+9. What is Relational Algebra? Name any four basic operations with their symbols.
+Section C: Applied Theory (4 Marks Each)
+Answer all questions. (2 × 4 = 8 Marks)
+10. Explain Generalization and Specialization in ER Modeling. Provide an example using "Person" as a superclass specialized into "Student" and "Employee".
+11. Discuss the concurrency control problems: Lost Update and Dirty Read. Explain with a simple transaction example.
+Section D: Long Answer Questions (5 Marks Each)
+Answer all questions. (2 × 5 = 10 Marks)
+12. Explain the components of ER Model in detail: Entities (strong/weak), Relationships (cardinality: 1:1, 1:N, M:N), Attributes, and participation constraints. Include standard notations.
+13. Define Normalization and explain the conditions for 1NF, 2NF, and 3NF using functional dependencies. Illustrate with an example table (e.g., employee-project table) showing progression from unnormalized to 3NF.

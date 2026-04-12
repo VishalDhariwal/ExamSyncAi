@@ -9,12 +9,18 @@ export default function Exam(){
 
   const exam = JSON.parse(localStorage.getItem("exam"))
 
-  const email = localStorage.getItem("user")   // ✅ ADD THIS
+  const email = localStorage.getItem("user")  
 
   const [answers,setAnswers] = useState({})
+  const [clicked, setClicked] = useState(false);
 
   const setAnswer = (id,value)=>{
     setAnswers({...answers,[id]:value})
+  }
+
+  const handleClick = () => {
+    setClicked(true);
+    submit(); 
   }
 
   const submit = async () => {
@@ -53,8 +59,10 @@ export default function Exam(){
       ))}
 
       <button
-        onClick={submit}
-        className="bg-green-500 p-4 rounded text-white mt-6"
+        onClick={handleClick}
+        className={`p-4 rounded text-white mt-6 ${
+          clicked ? "bg-gray-500" : "bg-green-500"
+        }`}
       >
         Submit Exam
       </button>

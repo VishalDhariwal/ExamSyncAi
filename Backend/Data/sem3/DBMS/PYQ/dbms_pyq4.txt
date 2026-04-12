@@ -1,0 +1,25 @@
+DBMS Examination Practice Paper
+Total Marks: 40 | Time: 90 Minutes
+Section A: Short Answer Questions (2 Marks Each)
+Answer all questions. (5 × 2 = 10 Marks)
+
+What is Physical Data Independence?
+Define Candidate Key. How is it different from Super Key?
+What is a Derived Attribute in ER Model?
+Define Isolation in ACID properties.
+What is B+ Tree? Mention one advantage in file organization.
+
+Section B: Intermediate Concepts (3 Marks Each)
+Answer all questions. (4 × 3 = 12 Marks)
+6. List and briefly explain advantages of DBMS over traditional file systems.
+7. Describe types of Database Users (Naive, Sophisticated, Application Programmers, DBA).
+8. Explain the operations Selection (σ) and Projection (π) in Relational Algebra with examples.
+9. What is Normalization? State its main benefits.
+Section C: Applied Theory (4 Marks Each)
+Answer all questions. (2 × 4 = 8 Marks)
+10. Explain Specialization in ER Modeling with a real-world example (e.g., "Vehicle" specialized into "Car", "Bike", "Truck").
+11. Discuss Deadlock handling methods: Prevention, Avoidance, Detection & Recovery. Mention one technique for each.
+Section D: Long Answer Questions (5 Marks Each)
+Answer all questions. (2 × 5 = 10 Marks)
+12. Explain different types of Indexes (Clustered, Non-clustered, Primary, Secondary). Discuss their advantages and when to use each.
+13. Describe Normalization process up to BCNF. Explain conditions for 3NF and BCNF with functional dependency examples.

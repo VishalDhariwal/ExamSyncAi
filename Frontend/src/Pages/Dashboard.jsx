@@ -6,14 +6,7 @@ import { generateExam } from "../api/api"
 import AILoader from "../components/AILoader"
 import { useEffect } from "react"
 
-useEffect(() => {
-  const user = localStorage.getItem("user")
 
-  if(!user){
-    navigate("/")
-  }
-
-}, [navigate])
 
 export default function Dashboard(){
 
@@ -24,7 +17,14 @@ export default function Dashboard(){
   const [loading,setLoading] = useState(false)
 
   const email = localStorage.getItem("user")
+  useEffect(() => {
+    const user = localStorage.getItem("user")
 
+    if(!user){
+      navigate("/")
+    }
+
+  }, [navigate])
   const generate = async () => {
 
     try {

@@ -31,7 +31,7 @@ export default function Header() {
         <Link to="/history" className="hover:text-blue-400">
           History
         </Link>
-
+        
         <span className="text-gray-400 text-sm">
           {email}
         </span>

@@ -1,0 +1,25 @@
+DBMS Examination Practice Paper
+Total Marks: 40 | Time: 90 Minutes
+Section A: Short Answer Questions (2 Marks Each)
+Answer all questions. (5 × 2 = 10 Marks)
+
+What is a Weak Entity? How is it identified in ER Diagram?
+Define Foreign Key and its role in referential integrity.
+What is a Multivalued Attribute? Give an example.
+Define Transaction.
+What is Deadlock? List any two necessary conditions for deadlock.
+
+Section B: Intermediate Concepts (3 Marks Each)
+Answer all questions. (4 × 3 = 12 Marks)
+6. Differentiate between Hierarchical, Network, and Relational Data Models.
+7. Explain the categories of SQL: DDL, DML, DQL, DCL, TCL with one command example each.
+8. What are the different types of constraints? Briefly explain NOT NULL, UNIQUE, and CHECK.
+9. Describe the purpose of Indexing. Differentiate between Primary and Secondary Index.
+Section C: Applied Theory (4 Marks Each)
+Answer all questions. (2 × 4 = 8 Marks)
+10. Explain Insertion, Deletion, and Update anomalies caused by redundancy. Illustrate with a simple unnormalized table (e.g., student-course-instructor).
+11. Discuss the problems without concurrency control: Unrepeatable Read and Phantom Read. Provide a brief example scenario.
+Section D: Long Answer Questions (5 Marks Each)
+Answer all questions. (2 × 5 = 10 Marks)
+12. Explain ACID properties in detail. Describe each (Atomicity, Consistency, Isolation, Durability) with real-world transaction examples (e.g., bank transfer).
+13. What is Concurrency Control? Explain lock-based protocols (shared and exclusive locks) and how they help prevent concurrency issues.

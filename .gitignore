@@ -5,21 +5,25 @@ __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
+*.pyc
 
 # Virtual environments
 venv/
 .venv/
 env/
 
-# Python cache
-*.pyc
-
 # ======================
-# Environment variables
+# Environment variables (IMPORTANT)
 # ======================
 .env
 .env.*
 *.env
+
+# ======================
+# Firebase / Secrets (IMPORTANT)
+# ======================
+firebase_key.json
+Backend/firebase_key.json
 
 # ======================
 # Backend generated data
@@ -59,6 +63,6 @@ yarn-error.log*
 Thumbs.db
 
 # ======================
-# Temporary / Generated
+# Temporary files
 # ======================
 structure.txt

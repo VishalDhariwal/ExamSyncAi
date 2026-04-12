@@ -46,6 +46,12 @@ export default function Results(){
         </div>
 
       )}
+      <button
+        onClick={() => window.location.href = "/dashboard"}
+        className="bg-green-500 p-4 rounded text-white mt-6"
+      >
+        Dashboard
+      </button>
 
     </div>
   )

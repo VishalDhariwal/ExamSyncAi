@@ -2,83 +2,167 @@ from src.state import ExamState
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
-from src.retriever import get_retriever
-from typing import Dict, Any, List
+from typing import Dict, Any
 from dotenv import load_dotenv
 import os
 
+# LlamaIndex imports
+from llama_index.core import Document, TreeIndex
+from llama_index.core.node_parser import SimpleNodeParser
+
+# -----------------------------------
+# Setup
+# -----------------------------------
 load_dotenv()
 
 llm = ChatGroq(
     model="llama-3.1-8b-instant",
-    temperature=0,
+    temperature=0.5,
 )
 
+# ✅ Change this to your absolute path if needed
+BASE_DIR = "Data"
 
 # -----------------------------------
-# Load Previous Year Questions
+# Load PYQ
 # -----------------------------------
 def load_pyq(semester: int, subject: str) -> str:
-    path = f"Data/sem{semester}/{subject.lower()}_pyq.md"
+    base_path = os.path.join(BASE_DIR, f"sem{semester}", subject.upper(), "PYQ")
+    contents = []
+
     try:
-        with open(path, "r", encoding="utf-8") as f:
-            return f.read()
-    except:
+        if not os.path.isdir(base_path):
+            print(f"❌ PYQ folder not found: {base_path}")
+            return ""
+
+        for file in sorted(os.listdir(base_path)):
+            if file.endswith(".txt"):
+                file_path = os.path.join(base_path, file)
+
+                with open(file_path, "r", encoding="utf-8") as f:
+                    contents.append(f.read())
+
+    except Exception as e:
+        print("Error loading PYQ files:", e)
         return ""
 
+    return "\n\n".join(contents)
 
 # -----------------------------------
-# Enforce Exact Paper Structure
+# Analyze PYQ (🔥 IMPORTANT)
 # -----------------------------------
-def enforce_structure(questions: List[dict]) -> List[dict]:
-    required = {2: 5, 3: 4, 4: 2, 5: 2}
-    final = []
+def analyze_pyq(pyq_text: str) -> str:
+    if not pyq_text.strip():
+        return ""
 
-    for marks, count in required.items():
-        group = [q for q in questions if q.get("marks") == marks]
-        final.extend(group[:count])
+    prompt = ChatPromptTemplate.from_template("""
+You are analyzing previous year question papers.
 
-    # Reassign IDs
-    for i, q in enumerate(final, 1):
-        q["id"] = i
+Extract:
 
-    return final
+1. Frequently asked topics
+2. Repeated questions (if any)
+3. Common question types (define, explain, long answer)
+4. Important exam patterns
+
+PYQ:
+{pyq}
+
+Return concise structured analysis.
+""")
+
+    chain = prompt | llm
+    response = chain.invoke({"pyq": pyq_text})
+    
+    if isinstance(response.content,str):
+        return response.content
+    return str(response.content)
+
+# -----------------------------------
+# TreeIndex Cache
+# -----------------------------------
+_tree_cache = {}
+
+# -----------------------------------
+# Build TreeIndex
+# -----------------------------------
+def get_tree_index(semester: int, subject: str):
+    cache_key = f"{semester}_{subject.lower()}"
+
+    if cache_key in _tree_cache:
+        return _tree_cache[cache_key]
+
+    base_path = os.path.join(BASE_DIR, f"sem{semester}", subject.upper())
+    notes_path = os.path.join(base_path, "NOTES", "notes.txt")
+
+    documents = []
+
+    try:
+        if os.path.exists(notes_path):
+            with open(notes_path, "r", encoding="utf-8") as f:
+                documents.append(Document(text=f.read()))
+        else:
+            print(f"❌ notes.txt not found at {notes_path}")
+            return None
+
+    except Exception as e:
+        print("Error loading notes:", e)
+        return None
+
+    parser = SimpleNodeParser()
+    nodes = parser.get_nodes_from_documents(documents)
+    index = TreeIndex(nodes)
+
+    _tree_cache[cache_key] = index
+    return index
+
+# -----------------------------------
+# Query TreeIndex
+# -----------------------------------
+def query_tree_index(index, subject: str) -> str:
+    query_engine = index.as_query_engine()
+
+    response = query_engine.query(
+        f"List important topics, definitions, and key concepts for {subject}. "
+        f"Focus on exam-relevant content."
+    )
+
+    return str(response)
+
+# -----------------------------------
+# Normalize Structure
+# -----------------------------------
 def normalize_structure(questions):
-    """
-    Ensures final paper always has:
-    5×2, 4×3, 2×4, 2×5 = 13 questions
-    """
     required = {2: 5, 3: 4, 4: 2, 5: 2}
     final = []
 
-    # Group by marks
     by_marks = {2: [], 3: [], 4: [], 5: []}
+
     for q in questions:
         m = q.get("marks")
         if m in by_marks:
             by_marks[m].append(q)
 
-    # Select required counts
     for marks, count in required.items():
         selected = by_marks[marks][:count]
 
-        # If not enough, create simple fallback questions
+        # fallback if missing
         while len(selected) < count:
+            topic = questions[0].get("topic", "Database Normalization")
+
             selected.append({
-                "question": f"Write short note on {questions[0].get('topic', 'DBMS')}.",
+                "question": f"Explain {topic} with example.",
                 "marks": marks,
-                "topic": questions[0].get("topic", "General"),
-                "ideal_answer": "Relevant explanation."
+                "topic": topic,
+                "ideal_answer": f"Detailed explanation of {topic} with examples."
             })
 
         final.extend(selected)
 
-    # Reassign IDs
     for i, q in enumerate(final, 1):
         q["id"] = i
 
     return final
-
 
 # -----------------------------------
 # Generator Node
@@ -91,15 +175,22 @@ def generator_node(state: ExamState) -> Dict[str, Any]:
     semester = state["semester"]
     subject = state["subject"]
 
-    # -------- RAG Context --------
-    retriever = get_retriever(semester)
-    docs = retriever.vectorstore.similarity_search(
-        f"Important topics for {subject}", k=8
-    )
-    rag_context = "\n\n".join([d.page_content for d in docs])
+    # -------- Notes (TreeIndex) --------
+    try:
+        index = get_tree_index(semester, subject)
 
-    # -------- PYQ Context --------
-    pyq_context = load_pyq(semester, subject)
+        if index:
+            rag_context = query_tree_index(index, subject)
+        else:
+            rag_context = ""
+
+    except Exception as e:
+        print("TreeIndex error:", e)
+        rag_context = ""
+
+    # -------- PYQ --------
+    pyq_raw = load_pyq(semester, subject)
+    pyq_analysis = analyze_pyq(pyq_raw)
 
     parser = JsonOutputParser()
 
@@ -107,12 +198,12 @@ def generator_node(state: ExamState) -> Dict[str, Any]:
 You are an expert university examiner.
 
 Use:
-1) Previous Year Question pattern
+1) PYQ analysis (patterns, repeated topics)
 2) Notes context
 
 ====================
-PYQ Pattern:
-{pyq}
+PYQ Analysis:
+{pyq_analysis}
 
 Notes:
 {context}
@@ -120,9 +211,7 @@ Notes:
 
 Create a **40-mark exam** for {subject}.
 
-STRICT REQUIREMENT — DO NOT DEVIATE:
-
-Generate EXACTLY:
+STRICT REQUIREMENT:
 
 - 5 questions of 2 marks
 - 4 questions of 3 marks
@@ -154,18 +243,11 @@ Rules:
 
     try:
         questions = chain.invoke({
-            "pyq": pyq_context,
+            "pyq_analysis": pyq_analysis,
             "context": rag_context,
             "subject": subject
         })
 
-        # Enforce exact structure
-        # questions = enforce_structure(questions)
-
-        # # Safety check
-        # if len(questions) != 13:
-        #     print("⚠️ Incorrect structure, regenerating fallback")
-        #     questions = []
         questions = normalize_structure(questions)
 
     except Exception as e:
@@ -176,6 +258,6 @@ Rules:
         "exam_questions": questions,
         "messages": [{
             "role": "system",
-            "content": "40-mark exam generated using PYQ + RAG"
+            "content": "40-mark exam generated using PYQ analysis"
         }]
     }

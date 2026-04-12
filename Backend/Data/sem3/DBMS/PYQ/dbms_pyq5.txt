@@ -1,0 +1,25 @@
+DBMS Examination Practice Paper
+Total Marks: 40 | Time: 90 Minutes
+Section A: Short Answer Questions (2 Marks Each)
+Answer all questions. (5 × 2 = 10 Marks)
+
+What is Atomicity in ACID?
+Define Referential Integrity.
+What is a Key Attribute in ER Model?
+What is Optimistic Concurrency Control?
+List any four advantages of DBMS.
+
+Section B: Intermediate Concepts (3 Marks Each)
+Answer all questions. (4 × 3 = 12 Marks)
+6. Explain Object-Oriented and Object-Relational Data Models briefly.
+7. Describe SQL security commands: GRANT and REVOKE with examples.
+8. What is Timestamp Ordering in concurrency control?
+9. Differentiate between Homogeneous and Heterogeneous Distributed Databases.
+Section C: Applied Theory (4 Marks Each)
+Answer all questions. (2 × 4 = 8 Marks)
+10. Explain Update anomalies with an example from a redundant relation (e.g., supplier-part-project table).
+11. Discuss types of NoSQL databases (Key-Value, Document, Column-Family, Graph) with one real-world use case each.
+Section D: Long Answer Questions (5 Marks Each)
+Answer all questions. (2 × 5 = 10 Marks)
+12. Explain Backup and Recovery techniques in DBMS. Describe Log-based recovery and Shadow Paging.
+13. What is Indexing? Explain B+ Tree file organization and why it is preferred for indexing in DBMS.
