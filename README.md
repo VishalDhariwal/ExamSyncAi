@@ -49,6 +49,7 @@ Vector Embeddings
 Agent-based workflows
 Prompt engineering
 📂 Project Structure
+```
 Backend/
 │── Data/
 │   ├── sem3/
@@ -80,6 +81,7 @@ Frontend/
 │
 │── package.json
 │── vite.config.js
+```
 🚀 Installation Guide
 📦 1. Clone Repository
 git clone https://github.com/your-username/studysync-ai.git
