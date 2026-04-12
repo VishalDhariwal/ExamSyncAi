@@ -1,118 +1,172 @@
-🚀 StudySync AI
-Intelligent RAG-Based Exam Generation & Evaluation System
+# StudySync AI – Intelligent RAG-Based Exam Generation & Evaluation System
 
-StudySync AI is an AI-powered platform that automatically generates exams from academic materials and evaluates student answers using Retrieval-Augmented Generation (RAG) and an agent-based AI workflow.
+StudySync AI is an AI-powered platform that generates exams from academic materials and automatically evaluates student answers using Retrieval-Augmented Generation (RAG) and an agent-based AI workflow.
 
-It helps students practice exams, receive instant feedback, and identify weak areas in their understanding.
+The system helps students practice exams, receive instant feedback, and identify learning gaps.
 
-✨ Features
-📚 AI Exam Generation
+---
 
-Automatically generates syllabus-aligned exams using notes and previous year questions.
+## 🚀 Features
 
-🧠 Agent-Based AI System
+* **RAG-Based Exam Generation**
+  Automatically generates syllabus-aligned exams using study materials and previous-year papers.
 
-Modular AI pipeline separating retrieval, reasoning, generation, and evaluation.
+* **Agentic AI Workflow**
+  Modular architecture separating retrieval, reasoning, and generation for reliable outputs.
 
-📝 Auto Evaluation System
+* **Automated Answer Evaluation**
+  Multi-step grading agent that evaluates answers and generates feedback.
 
-AI evaluates student answers and provides structured feedback and scoring.
+* **Weakness Analysis**
+  Identifies knowledge gaps and highlights areas for improvement.
 
-🔍 Weakness Detection
+* **Multi-User System**
+  Authentication with persistent exam history.
 
-Identifies weak topics and learning gaps after each exam.
+* **Fast Semantic Retrieval**
+  Uses vector search for accurate context retrieval.
 
-👤 User System
+---
 
-Firebase authentication with persistent exam history tracking.
+## 🧠 Tech Stack
 
-⚡ Semantic Search (RAG)
+### Backend
 
-Uses vector embeddings for accurate context-based retrieval.
+* Python
+* FastAPI
+* LangChain
+* LangGraph
+* Groq LLM
+* ChromaDB (Vector Database)
+* Firebase Authentication
 
-🧰 Tech Stack
-Backend
-Python
-FastAPI
-LangChain
-LangGraph
-Groq LLM
-ChromaDB
-Firebase Admin SDK
-Frontend
-React
-Vite
-Tailwind CSS
-AI Architecture
-Retrieval Augmented Generation (RAG)
-Vector Embeddings
-Agent-based workflows
-Prompt engineering
-📂 Project Structure
+### Frontend
+
+* React
+* Vite
+* TailwindCSS
+
+### AI Architecture
+
+* Retrieval Augmented Generation (RAG)
+* Vector Embeddings
+* Agent-Based Workflow
+* Prompt Engineering
+
+---
+
+## 📂 Project Structure
+
 ```
-Backend/
-│── Data/
-│   ├── sem3/
-│   │   ├── DBMS/
-│   │   │   ├── NOTES/notes.txt
-│   │   │   └── PYQ/*.txt
-│   │   ├── DSA/
-│   │   │   ├── NOTES/notes.txt
-│   │   │   └── PYQ/*.txt
-│   ├── sem4/
-│
-│── chroma_db/
-│── firebase_key.json
-│── main.py
-│── src/
-│   ├── graph.py
-│   ├── state.py
-│   ├── rag_setup.py
-│   ├── retriever.py
-│   ├── nodes/
-│   └── firebase_config.py
-│
-Frontend/
-│── src/
-│   ├── api/api.js
-│   ├── components/
-│   ├── Pages/
-│   ├── firebase/firebase.js
-│
-│── package.json
-│── vite.config.js
+.
+├── Backend
+│   ├── Data
+│   │   ├── sem3
+│   │   │   ├── DBMS
+│   │   │   │   ├── NOTES
+│   │   │   │   │   └── notes.txt
+│   │   │   │   └── PYQ
+│   │   │   │       ├── dbms_pyq1.txt
+│   │   │   │       ├── dbms_pyq2.txt
+│   │   │   │       ├── dbms_pyq3.txt
+│   │   │   │       ├── dbms_pyq4.txt
+│   │   │   │       └── dbms_pyq5.txt
+│   │   │   └── DSA
+│   │   │       ├── NOTES
+│   │   │       │   └── notes.txt
+│   │   │       └── PYQ
+│   │   │           ├── cpp_pyq1.txt
+│   │   │           ├── cpp_pyq2.txt
+│   │   │           └── cpp_pyq3.txt
+│   │   └── sem4
+│   ├── firebase_key.json
+│   ├── main.py
+│   └── src
+│       ├── config.py
+│       ├── firebase_config.py
+│       ├── graph.py
+│       ├── nodes
+│       │   ├── critic.py
+│       │   ├── generator.py
+│       │   ├── grader.py
+│       │   ├── ingest.py
+│       │   └── vision.py
+│       ├── rag_setup.py
+│       ├── retriever.py
+│       ├── state.py
+│       └── utils
+├── Frontend
+│   ├── eslint.config.js
+│   ├── index.html
+│   ├── package-lock.json
+│   ├── package.json
+│   ├── postcss.config.cjs
+│   ├── public
+│   │   ├── favicon.svg
+│   │   └── icons.svg
+│   ├── README.md
+│   ├── src
+│   │   ├── api
+│   │   │   └── api.js
+│   │   ├── App.css
+│   │   ├── App.jsx
+│   │   ├── components
+│   │   │   ├── AILoader.jsx
+│   │   │   ├── Header.jsx
+│   │   │   ├── QuestionCard.jsx
+│   │   │   ├── ScoreCard.jsx
+│   │   │   └── Sidebar.jsx
+│   │   ├── firebase
+│   │   │   └── firebase.js
+│   │   ├── index.css
+│   │   ├── main.jsx
+│   │   └── Pages
+│   │       ├── Dashboard.jsx
+│   │       ├── Exam.jsx
+│   │       ├── History.jsx
+│   │       ├── Login.jsx
+│   │       └── Results.jsx
+│   ├── structure.txt
+│   ├── tailwind.config.js
+│   └── vite.config.js
+├── requirements.txt
+
+25 directories, 56 files
+
 ```
+
+---
+
 🚀 Installation Guide
-📦 1. Clone Repository
+📦 1. Clone the Repository
 git clone https://github.com/your-username/studysync-ai.git
 cd studysync-ai
 🖥️ 2. Backend Setup
-Step 1: Go to backend
+Step 1: Move into backend folder
 cd Backend
 Step 2: Create virtual environment
 python -m venv venv
 
 Activate it:
 
-Mac/Linux
-
+Mac / Linux:
 source venv/bin/activate
-
-Windows
-
+Windows:
 venv\Scripts\activate
 Step 3: Install dependencies
+
+From root folder, run:
+
 pip install -r requirements.txt
 Step 4: Setup environment variables
 
-Create:
+Create a file:
 
 Backend/.env
 
 Add:
 
 GROQ_API_KEY=your_groq_api_key
-
 FIREBASE_API_KEY=your_firebase_api_key
 FIREBASE_AUTH_DOMAIN=your_auth_domain
 FIREBASE_PROJECT_ID=your_project_id
@@ -120,20 +174,20 @@ FIREBASE_STORAGE_BUCKET=your_storage_bucket
 FIREBASE_MESSAGING_SENDER_ID=your_sender_id
 FIREBASE_APP_ID=your_app_id
 FIREBASE_DATABASE_URL=your_database_url
-Step 5: Run backend
-uvicorn main:app_api --reload
+Step 5: Run backend server
+python main.py
 
-Backend runs at:
+Backend will start at:
 
 http://localhost:8000
 🌐 3. Frontend Setup
-Step 1: Go to frontend
+Step 1: Move into frontend folder
 cd Frontend
 Step 2: Install dependencies
 npm install
 Step 3: Setup environment variables
 
-Create:
+Create file:
 
 Frontend/.env
 
@@ -151,42 +205,68 @@ VITE_FIREBASE_DATABASE_URL=your_database_url
 Step 4: Run frontend
 npm run dev
 
-Frontend runs at:
+Frontend will start at:
 
 http://localhost:5173
-🔄 System Workflow
-Academic notes and PYQs are ingested into vector database
-ChromaDB stores embeddings for semantic search
-User selects semester and subject
-Relevant context is retrieved using RAG
-AI generates exam questions
-Student submits answers
-AI evaluates answers and generates feedback
-Weak topics are identified automatically
-📊 Project Highlights
-⚡ 10+ active students using system
-🧠 AI-generated exams from real syllabus
-📈 Automatic grading + feedback system
-🔍 Topic-wise weakness detection
-🔒 Environment Security
+## Final Result
 
-Never commit:
+Once both are running:
 
-.env
-firebase_key.json
-venv/
-node_modules/
-chroma_db/
-📌 Future Improvements
-Adaptive difficulty system
-Teacher dashboard
-Performance analytics graphs
-Multi-subject expansion
-Cloud deployment (Render/Vercel)
-👨‍💻 Author
+Backend → http://localhost:8000
+Frontend → http://localhost:5173
+## 🔄 System Workflow
 
-Built as an AI-powered academic assistant for automated exam generation and evaluation.
+1. Academic materials are ingested and converted into embeddings.
+2. Embeddings are stored in ChromaDB.
+3. When generating an exam, relevant content is retrieved using semantic search.
+4. AI agents generate questions based on retrieved context.
+5. Students answer the exam.
+6. Evaluation agents grade responses and generate feedback.
 
-⭐ Support
+---
 
-If you like this project, please consider giving it a ⭐ on GitHub.
+## 📊 Current Usage
+
+* Used by **10+ students**
+* Generates AI-based exams from course materials
+* Provides instant automated feedback and grading
+
+---
+
+## 🔒 Environment Variables
+
+The project uses `.env` files which are ignored in `.gitignore`.
+
+Backend:
+
+```
+Backend/.env
+```
+
+Frontend:
+
+```
+Frontend/.env
+```
+
+---
+
+## 📌 Future Improvements
+
+* Adaptive exam difficulty
+* Instructor dashboard
+* Detailed analytics
+* Cloud deployment
+* Multi-course support
+
+---
+
+## 👨‍💻 Author
+
+AI-powered academic assistant designed to improve exam preparation using modern LLM workflows.
+
+---
+
+## ⭐ Support
+
+If you like this project, consider starring the repository.
