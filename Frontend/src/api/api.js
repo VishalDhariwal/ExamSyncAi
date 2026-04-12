@@ -9,3 +9,6 @@ export const generateExam = (data) =>
 
 export const submitExam = (data) =>
   API.post("/submit-exam", data)
+
+export const getStructure = () =>
+  API.get("/structure")

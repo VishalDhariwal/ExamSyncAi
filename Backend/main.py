@@ -10,6 +10,9 @@ from src.state import ExamState
 from src.firebase_config import db
 from firebase_admin import firestore
 from google.cloud.firestore import SERVER_TIMESTAMP
+import os
+from pathlib import Path
+
 
 app_api = FastAPI()
 
@@ -112,3 +115,29 @@ def submit_exam(data: SubmitExam):
     save_exam_to_firestore(data.user_email, result)
 
     return result
+
+BASE_DIR = Path(__file__).resolve().parent
+DATA_PATH = BASE_DIR / "Data"
+
+@app_api.get("/structure")
+def get_structure():
+
+    structure = {}
+
+    for sem in os.listdir(DATA_PATH):
+        sem_path = os.path.join(DATA_PATH, sem)
+
+        if not os.path.isdir(sem_path):
+            continue
+
+        structure[sem] = {}
+
+        for subject in os.listdir(sem_path):
+            subject_path = os.path.join(sem_path, subject)
+
+            if not os.path.isdir(subject_path):
+                continue
+
+            structure[sem][subject] = os.listdir(subject_path)
+
+    return structure
