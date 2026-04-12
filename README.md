@@ -145,26 +145,39 @@ It helps students practice exams, receive instant feedback, and identify weak ar
 ---
 
 🚀 Installation Guide
+
 📦 1. Clone the Repository
+
 git clone https://github.com/your-username/studysync-ai.git
+
 cd studysync-ai
+
 🖥️ 2. Backend Setup
+
 Step 1: Move into backend folder
+
 cd Backend
+
 Step 2: Create virtual environment
+
 python -m venv venv
 
 Activate it:
 
 Mac / Linux:
+
 source venv/bin/activate
+
 Windows:
+
 venv\Scripts\activate
+
 Step 3: Install dependencies
 
 From root folder, run:
 
 pip install -r requirements.txt
+
 Step 4: Setup environment variables
 
 Create a file:
@@ -181,17 +194,25 @@ FIREBASE_STORAGE_BUCKET=your_storage_bucket
 FIREBASE_MESSAGING_SENDER_ID=your_sender_id
 FIREBASE_APP_ID=your_app_id
 FIREBASE_DATABASE_URL=your_database_url
-Step 5: Run backend server
-python main.py
+
+move to backend - cd Backend/
+
+run uvicorn - python -m uvicorn main:app_api --reload
 
 Backend will start at:
 
 http://localhost:8000
+
 🌐 3. Frontend Setup
+
 Step 1: Move into frontend folder
+
 cd Frontend
+
 Step 2: Install dependencies
+
 npm install
+
 Step 3: Setup environment variables
 
 Create file:
@@ -202,6 +223,7 @@ Add:
 
 VITE_API_URL=http://localhost:8000
 
+
 VITE_FIREBASE_API_KEY=your_firebase_api_key
 VITE_FIREBASE_AUTH_DOMAIN=your_auth_domain
 VITE_FIREBASE_PROJECT_ID=your_project_id
@@ -209,18 +231,25 @@ VITE_FIREBASE_STORAGE_BUCKET=your_storage_bucket
 VITE_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
 VITE_FIREBASE_APP_ID=your_app_id
 VITE_FIREBASE_DATABASE_URL=your_database_url
+
+
 Step 4: Run frontend
+
 npm run dev
 
 Frontend will start at:
 
 http://localhost:5173
+
+
 ## Final Result
 
 Once both are running:
 
 Backend → http://localhost:8000
+
 Frontend → http://localhost:5173
+
 ## 🔄 System Workflow
 
 1. Academic materials are ingested and converted into embeddings.
@@ -233,8 +262,7 @@ Frontend → http://localhost:5173
 ---
 
 ## 📊 Current Usage
-
-* Used by **10+ students**
+* Currently in Testing phase
 * Generates AI-based exams from course materials
 * Provides instant automated feedback and grading
 
