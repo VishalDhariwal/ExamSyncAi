@@ -1,61 +1,68 @@
-# StudySync AI – Intelligent RAG-Based Exam Generation & Evaluation System
+# 🚀 StudySync AI  
+### Intelligent RAG-Based Exam Generation & Evaluation System
 
-StudySync AI is an AI-powered platform that generates exams from academic materials and automatically evaluates student answers using Retrieval-Augmented Generation (RAG) and an agent-based AI workflow.
+StudySync AI is an AI-powered platform that automatically generates exams from academic materials and evaluates student answers using **Retrieval-Augmented Generation (RAG)** and an **agent-based AI workflow**.
 
-The system helps students practice exams, receive instant feedback, and identify learning gaps.
-
----
-
-## 🚀 Features
-
-* **RAG-Based Exam Generation**
-  Automatically generates syllabus-aligned exams using study materials and previous-year papers.
-
-* **Agentic AI Workflow**
-  Modular architecture separating retrieval, reasoning, and generation for reliable outputs.
-
-* **Automated Answer Evaluation**
-  Multi-step grading agent that evaluates answers and generates feedback.
-
-* **Weakness Analysis**
-  Identifies knowledge gaps and highlights areas for improvement.
-
-* **Multi-User System**
-  Authentication with persistent exam history.
-
-* **Fast Semantic Retrieval**
-  Uses vector search for accurate context retrieval.
+It helps students practice exams, receive instant feedback, and identify weak areas in their understanding.
 
 ---
 
-## 🧠 Tech Stack
+## ✨ Features
+
+### 📚 AI Exam Generation
+- Generates **syllabus-aligned exams** using notes and previous year questions (PYQs)
+- Follows realistic university exam patterns
+
+### 🧠 Agent-Based AI System
+- Modular pipeline separating:
+  - Retrieval
+  - Reasoning
+  - Generation
+  - Evaluation
+
+### 📝 Auto Evaluation System
+- AI evaluates answers like a **strict examiner**
+- Provides **structured feedback and scoring**
+
+### 🔍 Weakness Detection
+- Identifies **weak topics and learning gaps**
+- Generates actionable improvement insights
+
+### 👤 User System
+- Firebase authentication
+- Persistent exam history tracking
+
+### ⚡ Semantic Search (RAG)
+- Uses vector embeddings for **accurate context retrieval**
+
+---
+
+## 🧰 Tech Stack
 
 ### Backend
-
-* Python
-* FastAPI
-* LangChain
-* LangGraph
-* Groq LLM
-* ChromaDB (Vector Database)
-* Firebase Authentication
+- Python
+- FastAPI
+- LangChain
+- LangGraph
+- Groq (LLaMA 3.1)
+- ChromaDB
+- Firebase Admin SDK
 
 ### Frontend
-
-* React
-* Vite
-* TailwindCSS
+- React
+- Vite
+- Tailwind CSS
 
 ### AI Architecture
-
-* Retrieval Augmented Generation (RAG)
-* Vector Embeddings
-* Agent-Based Workflow
-* Prompt Engineering
+- Retrieval-Augmented Generation (RAG)
+- Vector Embeddings
+- Agent-based workflows
+- Prompt Engineering
 
 ---
 
 ## 📂 Project Structure
+
 
 ```
 .
