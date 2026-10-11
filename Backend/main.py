@@ -7,13 +7,16 @@ load_dotenv()
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
 os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 
-from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form
+import io
+from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form, Request
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
 from typing import List, Optional, cast
 from contextlib import asynccontextmanager
 from sqlalchemy.orm import Session
 import uuid as uuid_pkg
+import jwt
 
 from src.database import (
     init_db,
@@ -23,7 +26,14 @@ from src.database import (
     UserDocument,
     DocumentChunk,
 )
-from src.auth import hash_password, verify_password, create_access_token, get_current_user
+from src.auth import (
+    hash_password,
+    verify_password,
+    create_access_token,
+    get_current_user,
+    JWT_SECRET_KEY,
+    ALGORITHM,
+)
 from src.graph import app as graph_app
 from src.state import ExamState
 from src.nodes.ingest import ingest_user_document
@@ -290,31 +300,183 @@ def delete_document(
     return {"message": "Document deleted successfully"}
 
 
+class UpdateDocumentRequest(BaseModel):
+    subject: str
+
+
+@app_api.patch("/documents/{document_id}")
+def update_document(
+    document_id: str,
+    data: UpdateDocumentRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Updates the subject/course classification for an uploaded document."""
+    try:
+        doc_uuid = uuid_pkg.UUID(document_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid document ID format.",
+        )
+
+    doc = (
+        db.query(UserDocument)
+        .filter(UserDocument.id == doc_uuid, UserDocument.user_id == current_user.id)
+        .first()
+    )
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found.",
+        )
+
+    new_sub = data.subject.strip().upper()
+    if not new_sub:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Subject name cannot be empty.",
+        )
+
+    doc.subject = new_sub
+    chunks = db.query(DocumentChunk).filter(DocumentChunk.document_id == doc.id).all()
+    for c in chunks:
+        c.subject = new_sub
+    db.commit()
+    db.refresh(doc)
+
+    return {
+        "id": str(doc.id),
+        "title": doc.title,
+        "filename": doc.filename,
+        "subject": doc.subject,
+        "doc_type": doc.doc_type,
+        "file_size": doc.file_size,
+        "chunk_count": doc.chunk_count,
+    }
+
+
+@app_api.get("/documents/{document_id}/view")
+def view_document_pdf(
+    document_id: str,
+    request: Request,
+    token: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """
+    Streams the uploaded PDF document for in-browser viewing.
+    Accepts JWT token in Authorization header or query parameter for easy iframe/embed viewing.
+    """
+    auth_header = request.headers.get("authorization")
+    raw_token = None
+    if auth_header and auth_header.startswith("Bearer "):
+        raw_token = auth_header.split(" ")[1]
+    elif token:
+        raw_token = token
+
+    if not raw_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication token required.",
+        )
+
+    try:
+        payload = jwt.decode(raw_token, JWT_SECRET_KEY, algorithms=[ALGORITHM])
+        user_id_str = payload.get("sub")
+        if not user_id_str:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token.")
+        user_uuid = uuid_pkg.UUID(user_id_str)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired authentication token.",
+        )
+
+    try:
+        doc_uuid = uuid_pkg.UUID(document_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid document ID format.",
+        )
+
+    doc = (
+        db.query(UserDocument)
+        .filter(UserDocument.id == doc_uuid, UserDocument.user_id == user_uuid)
+        .first()
+    )
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found.",
+        )
+
+    # 1. Prioritize streaming directly from PostgreSQL binary store
+    if doc.file_data:
+        return StreamingResponse(
+            io.BytesIO(doc.file_data),
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"inline; filename=\"{doc.filename}\""
+            },
+        )
+
+    # 2. Fallback to file on disk if previously saved
+    target_path = None
+    if doc.file_path and Path(doc.file_path).exists():
+        target_path = Path(doc.file_path)
+
+    if not target_path or not target_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="PDF file not found in database or server storage.",
+        )
+
+    return FileResponse(
+        path=str(target_path),
+        media_type="application/pdf",
+        filename=doc.filename,
+        content_disposition_type="inline",
+    )
+
+
 @app_api.get("/subjects")
 def list_subjects(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Returns all unique classes/subjects from the student's uploaded study materials."""
+    """Returns all unique classes/subjects from the student's uploaded study materials and core course tags."""
     user_subjects = (
         db.query(UserDocument.subject)
         .filter(UserDocument.user_id == current_user.id)
         .distinct()
         .all()
     )
-    all_subjects = sorted(list({s[0] for s in user_subjects if s[0]}))
+    public_subjects = (
+        db.query(DocumentChunk.subject)
+        .filter(DocumentChunk.user_id.is_(None))
+        .distinct()
+        .all()
+    )
+    combined = {s[0] for s in user_subjects if s[0]} | {s[0] for s in public_subjects if s[0]} | {"DSA", "DBMS"}
+    all_subjects = sorted(list(combined))
     return all_subjects
 
 
 # -----------------------------
-# Generate Exam Endpoint
+# -----------------------------
+# Generate Exam Endpoint (Saves to PostgreSQL)
 # -----------------------------
 @app_api.post("/generate-exam")
-def generate_exam(data: ExamRequest):
+def generate_exam(
+    data: ExamRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """
     Generates an exam using PostgreSQL pgvector context and Groq LLM.
-    Supports user-customized rubrics (total marks, MCQs, short/long breakdowns)
-    with strict mathematical total validation.
+    Persists the generated exam questions and rubric configuration directly
+    in PostgreSQL marked as PENDING so it can be resumed from any device.
     """
     config_dict = None
     if data.exam_config:
@@ -333,7 +495,7 @@ def generate_exam(data: ExamRequest):
         config_dict = data.exam_config.model_dump()
 
     state_dict = {
-        "student_id": data.student_id or "guest",
+        "student_id": str(current_user.id),
         "semester": data.semester,
         "subject": data.subject.strip().upper(),
         "exam_config": config_dict,
@@ -351,7 +513,179 @@ def generate_exam(data: ExamRequest):
 
     state = cast(ExamState, state_dict)
     result = graph_app.invoke(state)
+
+    exam_questions = result.get("exam_questions", [])
+    total_marks = (
+        data.exam_config.total_marks
+        if data.exam_config
+        else sum(q.get("marks", 0) for q in exam_questions)
+    )
+
+    # Immediately persist generated exam session in PostgreSQL
+    exam_id = uuid_pkg.uuid4()
+    exam_record = ExamResult(
+        id=exam_id,
+        user_id=current_user.id,
+        subject=data.subject.strip().upper(),
+        semester=data.semester,
+        status="PENDING",
+        exam_config=config_dict or {},
+        exam_questions=exam_questions,
+        saved_answers={},
+        score=0,
+        max_score=total_marks,
+        grades=[],
+        diagnostic=None,
+    )
+    db.add(exam_record)
+    db.commit()
+    db.refresh(exam_record)
+
+    result["id"] = str(exam_record.id)
+    result["status"] = exam_record.status
+    result["saved_answers"] = {}
     return result
+
+
+class SaveDraftRequest(BaseModel):
+    saved_answers: dict
+
+
+@app_api.put("/exams/{exam_id}/draft")
+def save_exam_draft(
+    exam_id: str,
+    data: SaveDraftRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Saves in-progress student answers to PostgreSQL without submitting.
+    Ensures answers are preserved across devices and browser sessions.
+    """
+    try:
+        e_uuid = uuid_pkg.UUID(exam_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid exam ID format.")
+
+    exam = (
+        db.query(ExamResult)
+        .filter(ExamResult.id == e_uuid, ExamResult.user_id == current_user.id)
+        .first()
+    )
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam session not found.")
+
+    exam.saved_answers = data.saved_answers
+    exam.status = "PENDING"
+    from datetime import datetime, timezone
+    exam.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(exam)
+
+    return {
+        "id": str(exam.id),
+        "status": exam.status,
+        "saved_answers": exam.saved_answers,
+        "answered_count": len([v for v in exam.saved_answers.values() if str(v).strip()]),
+        "updated_at": exam.updated_at.isoformat() if exam.updated_at else None,
+    }
+
+
+@app_api.get("/exams/pending")
+def list_pending_exams(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Returns all pending/in-progress exams for the authenticated student from PostgreSQL."""
+    pending = (
+        db.query(ExamResult)
+        .filter(ExamResult.user_id == current_user.id, ExamResult.status == "PENDING")
+        .order_by(ExamResult.created_at.desc())
+        .all()
+    )
+    return [
+        {
+            "id": str(e.id),
+            "subject": e.subject,
+            "semester": e.semester,
+            "status": e.status,
+            "exam_config": e.exam_config,
+            "exam_questions": e.exam_questions,
+            "saved_answers": e.saved_answers or {},
+            "answeredCount": len([v for v in (e.saved_answers or {}).values() if str(v).strip()]),
+            "totalQuestions": len(e.exam_questions or []),
+            "created_at": e.created_at.isoformat() if e.created_at else None,
+            "savedAt": e.updated_at.isoformat() if e.updated_at else (e.created_at.isoformat() if e.created_at else None),
+        }
+        for e in pending
+    ]
+
+
+@app_api.get("/exams/{exam_id}")
+def get_exam_session(
+    exam_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Fetches an existing exam session from PostgreSQL by ID for resuming."""
+    try:
+        e_uuid = uuid_pkg.UUID(exam_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid exam ID format.")
+
+    exam = (
+        db.query(ExamResult)
+        .filter(ExamResult.id == e_uuid, ExamResult.user_id == current_user.id)
+        .first()
+    )
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found.")
+
+    return {
+        "id": str(exam.id),
+        "subject": exam.subject,
+        "semester": exam.semester,
+        "status": exam.status,
+        "exam_config": exam.exam_config,
+        "exam_questions": exam.exam_questions,
+        "saved_answers": exam.saved_answers or {},
+        "answeredCount": len([v for v in (exam.saved_answers or {}).values() if str(v).strip()]),
+        "totalQuestions": len(exam.exam_questions or []),
+        "score": exam.score,
+        "max_score": exam.max_score,
+        "grades": exam.grades,
+        "diagnostic": exam.diagnostic,
+        "created_at": exam.created_at.isoformat() if exam.created_at else None,
+        "savedAt": exam.updated_at.isoformat() if exam.updated_at else None,
+    }
+
+
+@app_api.delete("/exams/{exam_id}")
+def discard_exam(
+    exam_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Deletes or discards an uncompleted exam attempt from PostgreSQL."""
+    try:
+        e_uuid = uuid_pkg.UUID(exam_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid exam ID format.")
+
+    exam = (
+        db.query(ExamResult)
+        .filter(ExamResult.id == e_uuid, ExamResult.user_id == current_user.id)
+        .first()
+    )
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found.")
+
+    if exam.status == "COMPLETED":
+        return {"message": "Exam is completed and preserved in history."}
+
+    db.delete(exam)
+    db.commit()
+    return {"message": "Exam attempt discarded successfully"}
 
 
 # -----------------------------
@@ -364,8 +698,8 @@ def submit_exam(
     db: Session = Depends(get_db),
 ):
     """
-    Evaluates answers and stores the result in PostgreSQL.
-    Strictly isolated: linked solely to current_user.id.
+    Evaluates answers with LangGraph and stores evaluation report, score, and grades in PostgreSQL.
+    Transitions an existing PENDING exam record to COMPLETED.
     """
     state = cast(ExamState, data.exam_state)
     state["student_answers"] = data.student_answers
@@ -376,21 +710,61 @@ def submit_exam(
     grades = result.get("grades", [])
     total_score = sum(g.get("score", 0) for g in grades)
     max_score = sum(g.get("max_marks", 0) for g in grades)
+    diagnostic_report = result.get("diagnostic_report")
 
-    # Save to PostgreSQL under authenticated student's user_id
-    exam_record = ExamResult(
-        user_id=current_user.id,
-        subject=result.get("subject", state.get("subject", "General")),
-        semester=result.get("semester", state.get("semester")),
-        score=total_score,
-        max_score=max_score,
-        grades=grades,
-        diagnostic=result.get("diagnostic_report"),
-    )
+    answers_map = {ans["question_id"]: ans["answer_text"] for ans in data.student_answers}
 
-    db.add(exam_record)
+    # Find existing exam session in DB if available
+    existing_id = state.get("id")
+    exam_record = None
+    if existing_id:
+        try:
+            e_uuid = uuid_pkg.UUID(str(existing_id))
+            exam_record = (
+                db.query(ExamResult)
+                .filter(ExamResult.id == e_uuid, ExamResult.user_id == current_user.id)
+                .first()
+            )
+        except Exception:
+            pass
+
+    from datetime import datetime, timezone
+
+    if exam_record:
+        exam_record.status = "COMPLETED"
+        exam_record.score = total_score
+        exam_record.max_score = max_score
+        exam_record.grades = grades
+        exam_record.diagnostic = diagnostic_report
+        exam_record.saved_answers = answers_map
+        exam_record.updated_at = datetime.now(timezone.utc)
+        if not exam_record.exam_questions and state.get("exam_questions"):
+            exam_record.exam_questions = state.get("exam_questions")
+    else:
+        exam_record = ExamResult(
+            user_id=current_user.id,
+            subject=result.get("subject", state.get("subject", "General")),
+            semester=result.get("semester", state.get("semester")),
+            status="COMPLETED",
+            exam_config=state.get("exam_config", {}),
+            exam_questions=state.get("exam_questions", []),
+            saved_answers=answers_map,
+            score=total_score,
+            max_score=max_score,
+            grades=grades,
+            diagnostic=diagnostic_report,
+        )
+        db.add(exam_record)
+
     db.commit()
     db.refresh(exam_record)
+
+    result["id"] = str(exam_record.id)
+    result["status"] = exam_record.status
+    result["score"] = total_score
+    result["max_score"] = max_score
+    result["grades"] = grades
+    result["diagnostic"] = diagnostic_report
 
     return result
 
@@ -404,12 +778,12 @@ def get_exam_history(
     db: Session = Depends(get_db),
 ):
     """
-    Returns only the past exams taken by the authenticated student.
+    Returns completed exams taken by the authenticated student from PostgreSQL.
     Guarantees isolation: no student can view another student's exams.
     """
     records = (
         db.query(ExamResult)
-        .filter(ExamResult.user_id == current_user.id)
+        .filter(ExamResult.user_id == current_user.id, ExamResult.status != "PENDING")
         .order_by(ExamResult.created_at.desc())
         .all()
     )
@@ -419,10 +793,13 @@ def get_exam_history(
             "id": str(r.id),
             "subject": r.subject,
             "semester": r.semester,
+            "status": r.status,
             "score": r.score,
             "max_score": r.max_score,
             "grades": r.grades,
             "diagnostic": r.diagnostic,
+            "exam_questions": r.exam_questions,
+            "saved_answers": r.saved_answers,
             "created_at": r.created_at.isoformat() if r.created_at else None,
         }
         for r in records
@@ -432,27 +809,23 @@ def get_exam_history(
 # -----------------------------
 # Structure Endpoint
 # -----------------------------
-BASE_DIR = Path(__file__).resolve().parent
-DATA_PATH = BASE_DIR / "Data"
-
-
 @app_api.get("/structure")
-def get_structure():
+def get_structure(db: Session = Depends(get_db)):
+    """Returns available subjects and semesters directly from PostgreSQL."""
     structure = {}
-    if not DATA_PATH.exists():
-        return structure
+    chunks = db.query(
+        DocumentChunk.semester,
+        DocumentChunk.subject,
+        DocumentChunk.doc_type,
+    ).distinct().all()
 
-    for sem in os.listdir(DATA_PATH):
-        sem_path = os.path.join(DATA_PATH, sem)
-        if not os.path.isdir(sem_path):
-            continue
-
-        structure[sem] = {}
-        for subject in os.listdir(sem_path):
-            subject_path = os.path.join(sem_path, subject)
-            if not os.path.isdir(subject_path):
-                continue
-
-            structure[sem][subject] = os.listdir(subject_path)
+    for sem, subject, doc_type in chunks:
+        sem_key = f"sem{sem}" if sem else "general"
+        if sem_key not in structure:
+            structure[sem_key] = {}
+        if subject not in structure[sem_key]:
+            structure[sem_key][subject] = []
+        if doc_type not in structure[sem_key][subject]:
+            structure[sem_key][subject].append(doc_type)
 
     return structure

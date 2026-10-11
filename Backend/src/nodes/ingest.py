@@ -215,7 +215,10 @@ def ingest_user_document(
         if clean_doc_type not in ("NOTES", "PYQ"):
             clean_doc_type = "NOTES"
 
+        user_doc_id = uuid.uuid4()
+
         user_doc = UserDocument(
+            id=user_doc_id,
             user_id=user_id,
             title=clean_filename,
             filename=clean_filename,
@@ -223,6 +226,8 @@ def ingest_user_document(
             doc_type=clean_doc_type,
             file_size=len(file_bytes),
             chunk_count=len(chunks_text),
+            file_path=None,
+            file_data=file_bytes,
         )
         db.add(user_doc)
         db.flush()

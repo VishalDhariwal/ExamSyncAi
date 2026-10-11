@@ -13,6 +13,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    LargeBinary,
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship, Session
@@ -81,6 +82,8 @@ class UserDocument(Base):
     doc_type = Column(String(50), nullable=False, default="NOTES")  # 'NOTES' or 'PYQ'
     file_size = Column(Integer, nullable=False, default=0)
     chunk_count = Column(Integer, nullable=False, default=0)
+    file_path = Column(String(512), nullable=True)
+    file_data = Column(LargeBinary, nullable=True)
     created_at = Column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -112,6 +115,10 @@ class ExamResult(Base):
     )
     subject = Column(String(100), nullable=False, index=True)
     semester = Column(Integer, nullable=True, index=True)
+    status = Column(String(50), nullable=False, default="PENDING", index=True)  # 'PENDING', 'COMPLETED', 'DISCARDED'
+    exam_config = Column(JSONB, nullable=False, default=dict)
+    exam_questions = Column(JSONB, nullable=False, default=list)
+    saved_answers = Column(JSONB, nullable=False, default=dict)
     score = Column(Integer, nullable=False, default=0)
     max_score = Column(Integer, nullable=False, default=0)
     grades = Column(JSONB, nullable=False, default=list)
@@ -121,6 +128,12 @@ class ExamResult(Base):
         default=lambda: datetime.now(timezone.utc),
         nullable=False,
         index=True,
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
     )
 
     # Relationship back to User

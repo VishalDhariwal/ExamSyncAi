@@ -13,6 +13,10 @@ import {
   Trash2,
   Clock,
   RotateCcw,
+  GraduationCap,
+  CheckSquare,
+  Layers,
+  Sliders,
 } from "lucide-react"
 import { generateExam, getSubjects } from "../api/api"
 import AILoader from "../components/AILoader"
@@ -27,7 +31,7 @@ const PRESETS = {
   standard_40: {
     id: "standard_40",
     name: "Standard University (40m)",
-    description: "5×2m, 4×3m, 2×4m, 2×5m (13 Qs)",
+    icon: GraduationCap,
     total_marks: 40,
     breakdown: [
       { type: "short", marks: 2, count: 5 },
@@ -39,7 +43,7 @@ const PRESETS = {
   quiz_20: {
     id: "quiz_20",
     name: "MCQ & Short Quiz (20m)",
-    description: "10×1m MCQs + 5×2m Short Questions",
+    icon: CheckSquare,
     total_marks: 20,
     breakdown: [
       { type: "mcq", marks: 1, count: 10 },
@@ -49,7 +53,7 @@ const PRESETS = {
   comprehensive_50: {
     id: "comprehensive_50",
     name: "Comprehensive Mock (50m)",
-    description: "10×1m MCQs, 5×2m Short, 4×5m Medium, 1×10m Long",
+    icon: Layers,
     total_marks: 50,
     breakdown: [
       { type: "mcq", marks: 1, count: 10 },
@@ -76,9 +80,14 @@ export default function Practice() {
   const [isCustomMode, setIsCustomMode] = useState(false)
   const [pendingExams, setPendingExams] = useState([])
 
+  const refreshPending = async () => {
+    const list = await getPendingExams()
+    setPendingExams(list || [])
+  }
+
   // Refresh pending exams on mount
   useEffect(() => {
-    setPendingExams(getPendingExams())
+    refreshPending()
   }, [])
 
   // Fetch subjects strictly from user's materials
@@ -204,73 +213,55 @@ export default function Practice() {
 
       {/* Pending Exams Banner */}
       {pendingExams.length > 0 && (
-        <div className="bg-amber-50/80 border border-amber-200/90 rounded-3xl p-6 shadow-xs space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span>
-              <h3 className="text-sm font-bold text-amber-950">
-                You have {pendingExams.length} Unfinished / Pending Exam{pendingExams.length > 1 ? "s" : ""}
-              </h3>
+        <div className="bg-white rounded-2xl p-4 sm:p-5 border border-blue-100 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center flex-shrink-0">
+              <Clock className="w-5 h-5" />
             </div>
-            <span className="text-xs font-semibold text-amber-700">
-              Answer questions at your own pace
-            </span>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-gray-900">
+                  {pendingExams[0].subject}
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-150 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-pulse"></span>
+                  <span>In Progress</span>
+                </span>
+              </div>
+              <p className="text-[11px] text-gray-500 mt-0.5">
+                {pendingExams[0].answeredCount || 0} of {pendingExams[0].totalQuestions || pendingExams[0].exam_questions?.length || 0} questions answered. You can resume anytime without losing your answers.
+              </p>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {pendingExams.map((p) => (
-              <div
-                key={p.id}
-                className="bg-white rounded-2xl p-4 border border-amber-200/60 shadow-xs flex items-center justify-between gap-3"
-              >
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-gray-900">{p.subject}</span>
-                    <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-200">
-                      PENDING
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-gray-500 mt-1">
-                    Answered {p.answeredCount || 0} of {p.totalQuestions || p.exam_questions?.length || 0} questions
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => {
-                      removePendingExam(p.id)
-                      setPendingExams(getPendingExams())
-                    }}
-                    className="p-2 text-gray-400 hover:text-red-600 rounded-xl hover:bg-red-50 transition"
-                    title="Discard attempt"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => resumePendingExam(p.id, navigate)}
-                    className="bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs px-3.5 py-2 rounded-xl transition shadow-sm flex items-center gap-1.5 active:scale-95"
-                  >
-                    <Play className="w-3.5 h-3.5 fill-white" />
-                    <span>Resume</span>
-                  </button>
-                </div>
-              </div>
-            ))}
+          <div className="flex items-center gap-2 self-end sm:self-auto">
+            <button
+              onClick={async () => {
+                await removePendingExam(pendingExams[0].id)
+                await refreshPending()
+              }}
+              className="p-2 text-gray-400 hover:text-red-600 rounded-xl hover:bg-red-50 transition"
+              title="Discard attempt"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => resumePendingExam(pendingExams[0].id, navigate)}
+              className="bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs px-4 py-2 rounded-xl transition shadow-xs flex items-center gap-1.5 active:scale-95"
+            >
+              <Play className="w-3.5 h-3.5 fill-white" />
+              <span>Resume Exam</span>
+            </button>
           </div>
         </div>
       )}
 
       {/* Header Card */}
       <div className="bg-white rounded-3xl p-8 border border-gray-100 shadow-sm">
-        <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-100">
-          <div>
-            <h2 className="text-xl font-bold text-gray-900 tracking-tight">
-              Exam Rubric & Pattern Configurator
-            </h2>
-            <p className="text-xs text-gray-500 mt-1">
-              Select your subject and configure question breakdown to generate an AI mock exam.
-            </p>
-          </div>
+        <div className="flex items-center justify-between mb-6 pb-4 border-b border-gray-100">
+          <h2 className="text-xl font-bold text-gray-900 tracking-tight">
+            Exam Rubric & Pattern Configurator
+          </h2>
           <div className="w-10 h-10 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center">
             <Zap className="w-5 h-5 fill-blue-600" />
           </div>
@@ -332,38 +323,46 @@ export default function Practice() {
               Select Exam Format Preset
             </label>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-              {Object.values(PRESETS).map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => handleSelectPreset(p.id)}
-                  className={`p-3.5 rounded-xl border text-left transition ${
-                    selectedPreset === p.id && !isCustomMode
-                      ? "border-blue-600 bg-blue-50/70 text-blue-900 font-bold shadow-sm ring-1 ring-blue-500"
-                      : "border-gray-200 hover:border-blue-200 text-gray-700 bg-gray-50/40"
-                  }`}
-                >
-                  <div className="font-semibold text-xs text-gray-900">{p.name}</div>
-                  <div className="text-[11px] text-gray-500 mt-1 line-clamp-2">{p.description}</div>
-                </button>
-              ))}
+              {Object.values(PRESETS).map((p) => {
+                const IconComponent = p.icon || GraduationCap
+                const isSelected = selectedPreset === p.id && !isCustomMode
+
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => handleSelectPreset(p.id)}
+                    className={`p-3.5 rounded-xl border text-left transition flex items-center gap-2.5 ${
+                      isSelected
+                        ? "border-blue-600 bg-blue-50/70 text-blue-900 font-bold shadow-xs ring-1 ring-blue-500"
+                        : "border-gray-200 hover:border-blue-200 text-gray-700 bg-gray-50/40"
+                    }`}
+                  >
+                    <IconComponent
+                      className={`w-4 h-4 flex-shrink-0 ${
+                        isSelected ? "text-blue-600" : "text-gray-500"
+                      }`}
+                    />
+                    <span className="font-semibold text-xs text-gray-900">{p.name}</span>
+                  </button>
+                )
+              })}
 
               <button
                 type="button"
                 onClick={() => handleSelectPreset("custom")}
-                className={`p-3.5 rounded-xl border text-left transition flex flex-col justify-between ${
+                className={`p-3.5 rounded-xl border text-left transition flex items-center gap-2.5 ${
                   isCustomMode
-                    ? "border-blue-600 bg-blue-50/70 text-blue-900 font-bold shadow-sm ring-1 ring-blue-500"
+                    ? "border-blue-600 bg-blue-50/70 text-blue-900 font-bold shadow-xs ring-1 ring-blue-500"
                     : "border-gray-200 hover:border-blue-200 text-gray-700 bg-gray-50/40"
                 }`}
               >
-                <div>
-                  <div className="flex items-center gap-1.5 font-semibold text-xs text-gray-900">
-                    <Wrench className="w-3.5 h-3.5 text-blue-600" />
-                    <span>Custom Rubric</span>
-                  </div>
-                  <div className="text-[11px] text-gray-500 mt-1">Design your own mark pattern</div>
-                </div>
+                <Sliders
+                  className={`w-4 h-4 flex-shrink-0 ${
+                    isCustomMode ? "text-blue-600" : "text-gray-500"
+                  }`}
+                />
+                <span className="font-semibold text-xs text-gray-900">Custom Rubric</span>
               </button>
             </div>
           </div>

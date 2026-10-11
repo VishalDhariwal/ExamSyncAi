@@ -209,12 +209,12 @@ def generator_node(state: ExamState) -> Dict[str, Any]:
     prompt = ChatPromptTemplate.from_template("""
 You are an expert examiner creating an academic mock exam.
 
-Source Materials:
-1) PYQ analysis:
-{pyq_analysis}
-
-2) Syllabus & Notes context retrieved from vector store:
+Source Materials (Retrieved from Student's Uploaded Notes/Syllabus):
+1) Syllabus & Notes Context:
 {context}
+
+2) Prior Examination Pattern Analysis:
+{pyq_analysis}
 
 Target Subject: {subject}
 Total Marks: {total_marks}
@@ -222,6 +222,14 @@ Total Questions Required: {total_q_count}
 
 STRICT RUBRIC REQUIREMENTS:
 {requirements_text}
+
+CRITICAL INSTRUCTIONS:
+- STRICT GROUNDING: You MUST formulate all questions directly and exclusively from the syllabus topics, concepts, modules, and terminology provided in the "Syllabus & Notes Context" above.
+- DO NOT invent questions about an unrelated discipline. If the source material covers Computer Science, AI search, or algorithms, ALL questions MUST be strictly about those topics.
+- Strictly adhere to the requested question counts and marks distribution.
+- For MCQs, provide 4 plausible options with the correct option in 'ideal_answer'.
+- For subjective questions, provide technical definitions and ideal answers.
+- Return ONLY the JSON array without Markdown code fences or extra text.
 
 Return ONLY a valid JSON array matching this format:
 [
@@ -243,12 +251,6 @@ Return ONLY a valid JSON array matching this format:
     "ideal_answer": "..."
   }}
 ]
-
-Rules:
-- Strictly adhere to the requested question counts and marks distribution.
-- For MCQs, provide 4 plausible options with the correct option in 'ideal_answer'.
-- For subjective questions, provide technical definitions and ideal answers.
-- Return ONLY the JSON array without Markdown code fences or extra text.
 """)
 
     chain = prompt | llm | parser

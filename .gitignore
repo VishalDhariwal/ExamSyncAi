@@ -31,6 +31,9 @@ Backend/firebase_key.json
 # Backend generated data
 # ======================
 Backend/chroma_db/
+Backend/uploads/
+Backend/Data/
+Data/
 *.sqlite3
 
 # ======================

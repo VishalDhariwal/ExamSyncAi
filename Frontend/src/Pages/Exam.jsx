@@ -12,7 +12,11 @@ import {
 } from "lucide-react"
 import QuestionCard from "../components/QuestionCard"
 import { submitExam } from "../api/api"
-import { savePendingExam, removePendingExam } from "../utils/examStorage"
+import {
+  savePendingExam,
+  removePendingExam,
+  clearLocalPendingExam,
+} from "../utils/examStorage"
 
 export default function Exam() {
   const navigate = useNavigate()
@@ -70,9 +74,9 @@ export default function Exam() {
   }
 
   // Handle Save & Exit (Mark as Pending)
-  const handleSaveAndExit = () => {
+  const handleSaveAndExit = async () => {
     if (exam) {
-      savePendingExam(exam, answers)
+      await savePendingExam(exam, answers)
     }
     setSaveToast(true)
     setTimeout(() => {
@@ -81,13 +85,13 @@ export default function Exam() {
   }
 
   // Discard Attempt
-  const handleDiscard = () => {
+  const handleDiscard = async () => {
     if (
       window.confirm(
         "Are you sure you want to discard this exam attempt? All entered answers will be cleared."
       )
     ) {
-      if (exam) removePendingExam(exam.id)
+      if (exam) await removePendingExam(exam.id)
       localStorage.removeItem("exam")
       navigate("/practice")
     }
@@ -110,13 +114,14 @@ export default function Exam() {
         user_email: email,
       })
 
-      // Clean up pending list once successfully submitted & evaluated
+      // Clean up ONLY local pending cache once successfully submitted & evaluated
       if (exam?.id) {
-        removePendingExam(exam.id)
+        clearLocalPendingExam(exam.id)
       }
 
+      const completedExamId = res.data?.id || exam?.id
       localStorage.setItem("result", JSON.stringify(res.data))
-      navigate("/results")
+      navigate(completedExamId ? `/results?id=${completedExamId}` : "/results")
     } catch (err) {
       console.error("Exam submission failed:", err)
       alert("Failed to submit exam: " + (err.response?.data?.detail || err.message))

@@ -4,8 +4,6 @@ from langchain_huggingface import HuggingFaceEmbeddings
 
 from src.database import SessionLocal, DocumentChunk
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-DATA_DIR = BASE_DIR / "Data"
 
 embeddings = HuggingFaceEmbeddings(
     model_name="all-MiniLM-L6-v2",
@@ -138,23 +136,6 @@ def get_exam_context(
         )
         general_reranked = rerank_chunks(general_scored, top_n=5)
         notes_context = "\n\n---\n\n".join(general_reranked)
-
-    # 4. Optional fallback to disk if semester was provided
-    if not notes_context.strip() and semester is not None:
-        notes_file = DATA_DIR / f"sem{semester}" / subject_clean / "NOTES" / "notes.txt"
-        if notes_file.exists():
-            with open(notes_file, "r", encoding="utf-8") as f:
-                notes_context = f.read()
-
-    if not pyq_context.strip() and semester is not None:
-        pyq_dir = DATA_DIR / f"sem{semester}" / subject_clean / "PYQ"
-        if pyq_dir.exists():
-            pyq_files = sorted(pyq_dir.glob("*.txt"))
-            pyq_parts = []
-            for pf in pyq_files:
-                with open(pf, "r", encoding="utf-8") as f:
-                    pyq_parts.append(f.read())
-            pyq_context = "\n\n".join(pyq_parts)
 
     return {
         "notes_context": notes_context,

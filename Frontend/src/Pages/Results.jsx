@@ -1,4 +1,5 @@
-import { useNavigate } from "react-router-dom"
+import { useState, useEffect } from "react"
+import { useNavigate, useSearchParams } from "react-router-dom"
 import {
   CheckCircle2,
   Zap,
@@ -7,13 +8,60 @@ import {
   Lightbulb,
   FileText,
   Activity,
+  Loader2,
 } from "lucide-react"
 import ScoreCard from "../components/ScoreCard"
+import { getExamSessionApi } from "../api/api"
 
 export default function Results() {
   const navigate = useNavigate()
-  const raw = localStorage.getItem("result")
-  const data = raw ? JSON.parse(raw) : null
+  const [searchParams] = useSearchParams()
+  const examIdParam = searchParams.get("id")
+
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(Boolean(examIdParam))
+
+  useEffect(() => {
+    const loadResult = async () => {
+      if (examIdParam) {
+        try {
+          setLoading(true)
+          const res = await getExamSessionApi(examIdParam)
+          if (res.data) {
+            setData(res.data)
+            return
+          }
+        } catch (err) {
+          console.error("Failed to load exam session from DB:", err)
+        } finally {
+          setLoading(false)
+        }
+      }
+
+      // Fallback to recent local result
+      const raw = localStorage.getItem("result")
+      if (raw) {
+        try {
+          setData(JSON.parse(raw))
+        } catch (e) {
+          console.error("Failed to parse local result:", e)
+        }
+      }
+    }
+
+    loadResult()
+  }, [examIdParam])
+
+  if (loading) {
+    return (
+      <div className="w-full text-center py-24">
+        <Loader2 className="w-8 h-8 text-blue-600 animate-spin mx-auto mb-3" />
+        <p className="text-xs text-gray-500 font-medium">
+          Retrieving evaluation report from PostgreSQL database...
+        </p>
+      </div>
+    )
+  }
 
   if (!data) {
     return (
@@ -34,7 +82,9 @@ export default function Results() {
   }
 
   const grades = data.grades || []
-  const report = data.diagnostic_report || {}
+  const report = data.diagnostic_report || data.diagnostic || {}
+  const questions = data.exam_questions || []
+  const answers = data.saved_answers || data.student_answers || {}
 
   return (
     <div className="w-full space-y-6">
@@ -72,7 +122,7 @@ export default function Results() {
       </div>
 
       {/* Score Card Component */}
-      <ScoreCard grades={grades} />
+      <ScoreCard grades={grades} questions={questions} answers={answers} />
 
       {/* AI Diagnostic Report */}
       {report && (

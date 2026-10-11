@@ -19,8 +19,9 @@ function App() {
         <Route element={<AppLayout />}>
           <Route path="/dashboard" element={<Home />} />
           <Route path="/practice" element={<Practice />} />
-          <Route path="/materials" element={<Materials />} />
+
           <Route path="/reports" element={<Reports />} />
+          <Route path="/materials" element={<Materials />} />
           {/* Legacy route alias */}
           <Route path="/history" element={<Navigate to="/reports" replace />} />
           <Route path="/results" element={<Results />} />

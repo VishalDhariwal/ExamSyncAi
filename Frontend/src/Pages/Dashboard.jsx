@@ -424,7 +424,7 @@ export default function Dashboard() {
                           >
                             <span className="text-xl">📘</span>
                             <div>
-                              <div className="text-xs font-bold">Lecture Notes</div>
+                              <div className="text-xs font-bold">Notes / Syllabus</div>
                               <div className="text-[11px] text-gray-500">Syllabus & explanations</div>
                             </div>
                           </button>
@@ -763,7 +763,7 @@ export default function Dashboard() {
                                     : "bg-blue-100 text-blue-700"
                                 }`}
                               >
-                                {doc.doc_type === "PYQ" ? "📝 Past Paper" : "📘 Lecture Notes"}
+                                {doc.doc_type === "PYQ" ? "📝 Past Paper" : "📘 Notes / Syllabus"}
                               </span>
                               <button
                                 onClick={() => handleDelete(doc.id, doc.title)}

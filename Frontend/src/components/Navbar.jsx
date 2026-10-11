@@ -19,14 +19,14 @@ export default function Navbar() {
       icon: Zap,
     },
     {
-      name: "Study Materials",
-      path: "/materials",
-      icon: BookOpen,
-    },
-    {
       name: "Reports",
       path: "/reports",
       icon: BarChart3,
+    },
+    {
+      name: "Study Materials",
+      path: "/materials",
+      icon: BookOpen,
     },
   ]
 

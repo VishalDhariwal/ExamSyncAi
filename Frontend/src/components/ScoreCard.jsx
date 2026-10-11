@@ -1,6 +1,6 @@
 import { Award, CheckCircle2, MessageSquare } from "lucide-react"
 
-export default function ScoreCard({ grades = [] }) {
+export default function ScoreCard({ grades = [], questions = [], answers = {} }) {
   // Remove duplicate questions
   const uniqueGrades = Object.values(
     grades.reduce((acc, g) => {
@@ -36,33 +36,68 @@ export default function ScoreCard({ grades = [] }) {
         </div>
       </div>
 
-      <div className="space-y-3">
+      <div className="space-y-4">
         <h3 className="text-xs font-bold uppercase tracking-wider text-gray-400">
-          Question-By-Question Evaluation
+          Question-By-Question Evaluation & Rubric Breakdown
         </h3>
 
-        {uniqueGrades.map((g) => (
-          <div
-            key={g.question_id}
-            className="p-4 rounded-2xl bg-gray-50/70 border border-gray-100 space-y-1.5"
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-gray-900">
-                Question {g.question_id}
-              </span>
-              <span className="text-xs font-extrabold px-2.5 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-100">
-                {g.score} / {g.max_marks} Marks
-              </span>
-            </div>
+        {uniqueGrades.map((g) => {
+          const qObj = questions.find((q) => String(q.id) === String(g.question_id))
+          const answerText =
+            typeof answers === "object" && !Array.isArray(answers)
+              ? answers[g.question_id] || answers[String(g.question_id)]
+              : Array.isArray(answers)
+              ? answers.find((a) => String(a.question_id) === String(g.question_id))?.answer_text
+              : null
 
-            {(g.feedback || g.justification) && (
-              <p className="text-xs text-gray-600 leading-relaxed flex items-start gap-1.5 pt-1">
-                <MessageSquare className="w-3.5 h-3.5 text-gray-400 flex-shrink-0 mt-0.5" />
-                <span>{g.feedback || g.justification}</span>
-              </p>
-            )}
-          </div>
-        ))}
+          return (
+            <div
+              key={g.question_id}
+              className="p-5 rounded-2xl bg-gray-50/70 border border-gray-100 space-y-3"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-gray-900">
+                  Question {g.question_id}
+                </span>
+                <span className="text-xs font-extrabold px-2.5 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-100">
+                  {g.score} / {g.max_marks} Marks
+                </span>
+              </div>
+
+              {qObj?.question && (
+                <div className="bg-white p-3.5 rounded-xl border border-gray-100 text-xs text-gray-800 font-medium">
+                  <span className="text-[10px] uppercase font-bold text-gray-400 block mb-1">
+                    Question Prompt
+                  </span>
+                  <p>{qObj.question}</p>
+                </div>
+              )}
+
+              {answerText !== undefined && answerText !== null && (
+                <div className="bg-white p-3.5 rounded-xl border border-gray-100 text-xs text-gray-700">
+                  <span className="text-[10px] uppercase font-bold text-gray-400 block mb-1">
+                    Your Submitted Answer
+                  </span>
+                  <p className="whitespace-pre-wrap">
+                    {answerText || (
+                      <span className="text-gray-400 italic">No answer submitted</span>
+                    )}
+                  </p>
+                </div>
+              )}
+
+              {(g.feedback || g.justification) && (
+                <div className="text-xs text-gray-600 leading-relaxed flex items-start gap-1.5 pt-1">
+                  <MessageSquare className="w-3.5 h-3.5 text-blue-500 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-semibold text-gray-900 mr-1">Examiner Assessment:</span>
+                    <span>{g.feedback || g.justification}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })}
       </div>
     </div>
   )

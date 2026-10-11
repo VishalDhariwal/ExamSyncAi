@@ -34,8 +34,13 @@ export default function Home() {
   const [subjects, setSubjects] = useState([])
   const [pendingExams, setPendingExams] = useState([])
 
+  const refreshPending = async () => {
+    const list = await getPendingExams()
+    setPendingExams(list || [])
+  }
+
   useEffect(() => {
-    setPendingExams(getPendingExams())
+    refreshPending()
     const fetchData = async () => {
       try {
         setLoading(true)
@@ -139,17 +144,21 @@ export default function Home() {
 
       {/* Pending Exams Section */}
       {pendingExams.length > 0 && (
-        <div className="bg-gradient-to-r from-amber-50 to-orange-50/60 rounded-3xl p-7 border border-amber-200/90 shadow-sm space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-amber-200/70">
+        <div className="bg-white rounded-3xl p-6 sm:p-7 border border-gray-100 shadow-sm space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-gray-100">
             <div className="flex items-center gap-2.5">
-              <span className="w-3 h-3 rounded-full bg-amber-500 animate-pulse"></span>
-              <h2 className="text-base font-bold text-amber-950">
-                Pending Exams ({pendingExams.length}) • In Progress
-              </h2>
+              <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                <Clock className="w-4 h-4 text-blue-600" />
+              </div>
+              <div>
+                <h2 className="text-sm font-bold text-gray-900 tracking-tight">
+                  In-Progress Mock Exams ({pendingExams.length})
+                </h2>
+                <p className="text-xs text-gray-500">
+                  Pick up right where you left off. All your saved draft answers are preserved in PostgreSQL.
+                </p>
+              </div>
             </div>
-            <p className="text-xs text-amber-800 font-medium">
-              You exited these exams without submitting. Resume answering anytime.
-            </p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -161,42 +170,39 @@ export default function Home() {
               return (
                 <div
                   key={p.id}
-                  className="bg-white rounded-2xl p-5 border border-amber-200/80 shadow-xs flex flex-col justify-between gap-4 hover:shadow-md transition"
+                  className="bg-gray-50/70 hover:bg-gray-50 rounded-2xl p-5 border border-gray-200/70 shadow-xs flex flex-col justify-between gap-4 transition hover:border-blue-200"
                 >
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     <div className="flex items-center justify-between">
-                      <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-200 flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
-                        <span>PENDING</span>
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-150 flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-pulse"></span>
+                        <span>In Progress</span>
                       </span>
                       <span className="text-[11px] text-gray-400 font-medium">
                         {p.savedAt ? new Date(p.savedAt).toLocaleDateString() : "Saved"}
                       </span>
                     </div>
 
-                    <h3 className="text-sm font-bold text-gray-900 truncate">{p.subject}</h3>
-
                     <div>
-                      <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
-                        <span>Progress</span>
-                        <span className="font-semibold text-gray-700">
-                          {answered} / {total} answered ({pct}%)
-                        </span>
-                      </div>
-                      <div className="w-full bg-gray-100 h-2 rounded-full overflow-hidden">
-                        <div
-                          className="bg-amber-500 h-full rounded-full transition-all duration-300"
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
+                      <h3 className="text-sm font-bold text-gray-900 truncate">{p.subject}</h3>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        {answered} of {total} answered ({pct}%)
+                      </p>
+                    </div>
+
+                    <div className="w-full bg-gray-200/80 h-2 rounded-full overflow-hidden">
+                      <div
+                        className="bg-blue-600 h-full rounded-full transition-all duration-300"
+                        style={{ width: `${pct}%` }}
+                      />
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
+                  <div className="flex items-center gap-2 pt-3 border-t border-gray-200/60">
                     <button
-                      onClick={() => {
-                        removePendingExam(p.id)
-                        setPendingExams(getPendingExams())
+                      onClick={async () => {
+                        await removePendingExam(p.id)
+                        await refreshPending()
                       }}
                       className="p-2 text-gray-400 hover:text-red-600 rounded-xl hover:bg-red-50 transition"
                       title="Discard attempt"
@@ -205,10 +211,10 @@ export default function Home() {
                     </button>
                     <button
                       onClick={() => resumePendingExam(p.id, navigate)}
-                      className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs py-2 px-3 rounded-xl transition shadow-sm flex items-center justify-center gap-1.5 active:scale-95"
+                      className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs py-2 px-3.5 rounded-xl transition shadow-xs flex items-center justify-center gap-1.5 active:scale-95"
                     >
                       <Play className="w-3.5 h-3.5 fill-white" />
-                      <span>Resume Test ⚡</span>
+                      <span>Resume Test</span>
                     </button>
                   </div>
                 </div>
@@ -311,22 +317,26 @@ export default function Home() {
                       </div>
                       <span
                         className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
-                          item.avg >= 75
+                          item.attempts === 0
+                            ? "bg-gray-100 text-gray-500 border border-gray-200"
+                            : item.avg >= 75
                             ? "bg-blue-100 text-blue-800"
                             : item.avg >= 50
                             ? "bg-blue-50 text-blue-700"
-                            : "bg-gray-200 text-gray-700"
+                            : "bg-red-50 text-red-700"
                         }`}
                       >
                         {item.attempts > 0 ? `${item.avg}% • ${item.status}` : "Unattempted"}
                       </span>
                     </div>
 
-                    <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
-                      <div
-                        className="bg-blue-600 h-2 rounded-full transition-all duration-500"
-                        style={{ width: `${item.avg || 5}%` }}
-                      />
+                    <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
+                      {item.attempts > 0 && item.avg > 0 ? (
+                        <div
+                          className="bg-blue-600 h-2 rounded-full transition-all duration-500"
+                          style={{ width: `${item.avg}%` }}
+                        />
+                      ) : null}
                     </div>
                   </div>
                 ))}
