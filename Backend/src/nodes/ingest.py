@@ -6,15 +6,9 @@ from typing import Optional
 from sqlalchemy.orm import Session
 from langchain_community.document_loaders import PyPDFDirectoryLoader, TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_huggingface import HuggingFaceEmbeddings
-
 from src.database import SessionLocal, DocumentChunk, UserDocument, init_db
 from src.security import MAX_PDF_SIZE_BYTES
-
-embeddings = HuggingFaceEmbeddings(
-    model_name="all-MiniLM-L6-v2",
-    model_kwargs={"local_files_only": True},
-)
+from src.embeddings import embeddings
 
 
 def validate_academic_content(text: str, subject: str) -> None:

@@ -1,14 +1,7 @@
 from typing import List, Optional, Tuple, Dict, Any
 from pathlib import Path
-from langchain_huggingface import HuggingFaceEmbeddings
-
 from src.database import SessionLocal, DocumentChunk
-
-
-embeddings = HuggingFaceEmbeddings(
-    model_name="all-MiniLM-L6-v2",
-    model_kwargs={"local_files_only": True},
-)
+from src.embeddings import embeddings
 
 
 from sqlalchemy import or_
