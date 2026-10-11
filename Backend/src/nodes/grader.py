@@ -2,10 +2,12 @@ from src.state import ExamState
 from groq import Groq
 from typing import Dict, Any
 import json
+import os
 from dotenv import load_dotenv
 
 load_dotenv()
 
+GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
 client = Groq()
 
 
@@ -76,7 +78,7 @@ Return ONLY JSON:
 
         try:
             response = client.chat.completions.create(
-                model="llama-3.1-8b-instant",
+                model=GROQ_MODEL,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0,
                 max_tokens=200,
