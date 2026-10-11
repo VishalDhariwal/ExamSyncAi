@@ -14,7 +14,7 @@ class DiagnosticMetric(BaseModel):
 class ExamState(TypedDict):
     # --- Identifiers ---
     student_id: str
-    semester: int
+    semester: Optional[int]
     subject: str
     
     # --- Communication (The Memory) ---

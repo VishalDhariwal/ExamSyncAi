@@ -41,13 +41,31 @@ export default function Exam(){
     navigate("/results")
   }
 
-  return(
+  if (!exam || !exam.exam_questions || exam.exam_questions.length === 0) {
+    return (
+      <div className="p-10 max-w-xl mx-auto text-center mt-20 bg-white rounded-2xl shadow p-8">
+        <h2 className="text-2xl font-bold mb-2 text-gray-800">No active exam found</h2>
+        <p className="text-sm text-gray-500 mb-6">Please launch a mock exam from your dashboard.</p>
+        <button
+          onClick={() => navigate("/dashboard")}
+          className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2.5 rounded-xl font-semibold transition"
+        >
+          Go to Dashboard
+        </button>
+      </div>
+    )
+  }
 
-    <div className="p-10">
-
-      <h1 className="text-3xl font-bold mb-6">
-        Mock Exam
-      </h1>
+  return (
+    <div className="p-10 max-w-4xl mx-auto">
+      <div className="mb-6 pb-4 border-b border-gray-200">
+        <h1 className="text-3xl font-bold text-gray-900">
+          Mock Exam: {exam.subject || "Adaptive Assessment"}
+        </h1>
+        <p className="text-sm text-gray-500 mt-1">
+          Standard University Format: 40 Marks • Complete all questions and submit for instant AI evaluation.
+        </p>
+      </div>
 
       {exam.exam_questions.map(q=>(
         <QuestionCard

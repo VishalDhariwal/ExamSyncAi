@@ -18,6 +18,8 @@ env/
 .env
 .env.*
 *.env
+Backend/eval/
+Backend/test_security.py
 
 # ======================
 # Firebase / Secrets (IMPORTANT)
@@ -66,3 +68,4 @@ Thumbs.db
 # Temporary files
 # ======================
 structure.txt
+issues.md

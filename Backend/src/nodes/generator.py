@@ -95,21 +95,26 @@ def generator_node(state: ExamState) -> Dict[str, Any]:
     if state.get("exam_questions"):
         return {}
 
-    semester = state["semester"]
+    semester = state.get("semester")
     subject = state["subject"]
+    student_id = state.get("student_id")
 
-    # 1. Retrieve & Rerank via ChromaDB (with automatic fallback to disk if needed)
+    # 1. Retrieve & Rerank via PostgreSQL pgvector (with automatic fallback to disk if needed)
     try:
-        context_data = get_exam_context(semester, subject)
+        context_data = get_exam_context(
+            subject=subject,
+            semester=semester,
+            user_id=student_id if student_id != "guest" else None,
+        )
         rag_context = context_data.get("notes_context", "")
         pyq_text = context_data.get("pyq_context", "")
     except Exception as e:
-        print("ChromaDB context retrieval error:", e)
+        print("pgvector context retrieval error:", e)
         rag_context = ""
         pyq_text = ""
 
-    # 2. Extract PYQ patterns from retrieved past questions
-    pyq_analysis = analyze_pyq(pyq_text)
+    # 2. Extract PYQ patterns from retrieved past questions (if available)
+    pyq_analysis = analyze_pyq(pyq_text) if pyq_text else "No prior PYQ documents uploaded. Derive balanced mock exam questions directly from the provided course notes."
 
     # 3. Generate exam using Groq LLM
     parser = JsonOutputParser()

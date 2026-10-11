@@ -1,16 +1,32 @@
-from fastapi import FastAPI, Depends, HTTPException, status
+import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment configuration
+load_dotenv()
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
+os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+
+from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
 from typing import List, Optional, cast
 from contextlib import asynccontextmanager
-import os
-from pathlib import Path
 from sqlalchemy.orm import Session
+import uuid as uuid_pkg
 
-from src.database import init_db, get_db, User, ExamResult
+from src.database import (
+    init_db,
+    get_db,
+    User,
+    ExamResult,
+    UserDocument,
+    DocumentChunk,
+)
 from src.auth import hash_password, verify_password, create_access_token, get_current_user
 from src.graph import app as graph_app
 from src.state import ExamState
+from src.nodes.ingest import ingest_user_document
 
 
 @asynccontextmanager
@@ -53,7 +69,7 @@ class LoginRequest(BaseModel):
 
 class ExamRequest(BaseModel):
     student_id: Optional[str] = None
-    semester: int
+    semester: Optional[int] = None
     subject: str
 
 
@@ -151,6 +167,140 @@ def get_me(current_user: User = Depends(get_current_user)):
 
 
 # -----------------------------
+# Document Management & Ingestion Endpoints
+# -----------------------------
+@app_api.post("/documents/upload", status_code=status.HTTP_201_CREATED)
+async def upload_document(
+    file: UploadFile = File(...),
+    subject: str = Form(...),
+    doc_type: str = Form("NOTES"),
+    semester: Optional[int] = Form(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Uploads and safely parses a study document (PDF or TXT/MD),
+    chunks it, computes vector embeddings, and links it to the user.
+    """
+    clean_subject = subject.strip()
+    if not clean_subject:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Subject or Class name is required.",
+        )
+
+    file_bytes = await file.read()
+    try:
+        doc = ingest_user_document(
+            user_id=current_user.id,
+            file_bytes=file_bytes,
+            filename=file.filename or "uploaded_document.pdf",
+            subject=clean_subject,
+            doc_type=doc_type,
+            semester=semester,
+            db=db,
+        )
+        return {
+            "id": str(doc.id),
+            "title": doc.title,
+            "filename": doc.filename,
+            "subject": doc.subject,
+            "doc_type": doc.doc_type,
+            "file_size": doc.file_size,
+            "chunk_count": doc.chunk_count,
+            "created_at": doc.created_at.isoformat() if doc.created_at else None,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Document processing error: {e}",
+        )
+
+
+@app_api.get("/documents")
+def list_documents(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Lists all study materials uploaded by the authenticated student."""
+    docs = (
+        db.query(UserDocument)
+        .filter(UserDocument.user_id == current_user.id)
+        .order_by(UserDocument.created_at.desc())
+        .all()
+    )
+    return [
+        {
+            "id": str(d.id),
+            "title": d.title,
+            "filename": d.filename,
+            "subject": d.subject,
+            "doc_type": d.doc_type,
+            "file_size": d.file_size,
+            "chunk_count": d.chunk_count,
+            "created_at": d.created_at.isoformat() if d.created_at else None,
+        }
+        for d in docs
+    ]
+
+
+@app_api.delete("/documents/{document_id}")
+def delete_document(
+    document_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Deletes an uploaded document and its vector chunks."""
+    try:
+        doc_uuid = uuid_pkg.UUID(document_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid document ID format.",
+        )
+
+    doc = (
+        db.query(UserDocument)
+        .filter(UserDocument.id == doc_uuid, UserDocument.user_id == current_user.id)
+        .first()
+    )
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found.",
+        )
+
+    db.query(DocumentChunk).filter(DocumentChunk.document_id == doc.id).delete()
+    db.delete(doc)
+    db.commit()
+    return {"message": "Document deleted successfully"}
+
+
+@app_api.get("/subjects")
+def list_subjects(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Returns all unique classes/subjects available to the student."""
+    user_subjects = (
+        db.query(UserDocument.subject)
+        .filter(UserDocument.user_id == current_user.id)
+        .distinct()
+        .all()
+    )
+    chunk_subjects = (
+        db.query(DocumentChunk.subject)
+        .filter(DocumentChunk.user_id.is_(None))
+        .distinct()
+        .all()
+    )
+    all_subjects = sorted(list({s[0] for s in user_subjects + chunk_subjects if s[0]}))
+    return all_subjects
+
+
+# -----------------------------
 # Generate Exam Endpoint
 # -----------------------------
 @app_api.post("/generate-exam")
@@ -159,7 +309,7 @@ def generate_exam(data: ExamRequest):
     state_dict = {
         "student_id": data.student_id or "guest",
         "semester": data.semester,
-        "subject": data.subject,
+        "subject": data.subject.strip().upper(),
         "messages": [],
         "image_bytes": None,
         "raw_transcription": None,
@@ -204,7 +354,7 @@ def submit_exam(
     exam_record = ExamResult(
         user_id=current_user.id,
         subject=result.get("subject", state.get("subject", "General")),
-        semester=result.get("semester", state.get("semester", 1)),
+        semester=result.get("semester", state.get("semester")),
         score=total_score,
         max_score=max_score,
         grades=grades,

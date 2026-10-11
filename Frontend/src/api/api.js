@@ -23,7 +23,16 @@ export const generateExam = (data) => API.post("/generate-exam", data)
 export const submitExam = (data) => API.post("/submit-exam", data)
 export const getExamHistory = () => API.get("/exam-history")
 
-// --- Course Structure ---
+// --- Course Structure & Subjects ---
 export const getStructure = () => API.get("/structure")
+export const getSubjects = () => API.get("/subjects")
+
+// --- Document Management & Uploads ---
+export const uploadDocument = (formData) =>
+  API.post("/documents/upload", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  })
+export const getDocuments = () => API.get("/documents")
+export const deleteDocument = (id) => API.delete(`/documents/${id}`)
 
 export default API

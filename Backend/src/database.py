@@ -57,10 +57,48 @@ class User(Base):
     exam_results = relationship(
         "ExamResult", back_populates="user", cascade="all, delete-orphan"
     )
+    documents = relationship(
+        "UserDocument", back_populates="user", cascade="all, delete-orphan"
+    )
 
 
 # ----------------------------------------------------
-# 2. Exam Results Table (Isolated Student Submissions)
+# 2. User Documents Table (Uploaded Study Materials)
+# ----------------------------------------------------
+class UserDocument(Base):
+    __tablename__ = "user_documents"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    title = Column(String(255), nullable=False)
+    filename = Column(String(255), nullable=False)
+    subject = Column(String(100), nullable=False, index=True)
+    doc_type = Column(String(50), nullable=False, default="NOTES")  # 'NOTES' or 'PYQ'
+    file_size = Column(Integer, nullable=False, default=0)
+    chunk_count = Column(Integer, nullable=False, default=0)
+    created_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+        index=True,
+    )
+
+    # Relationships
+    user = relationship("User", back_populates="documents")
+    chunks = relationship(
+        "DocumentChunk",
+        back_populates="document",
+        cascade="all, delete-orphan",
+    )
+
+
+# ----------------------------------------------------
+# 3. Exam Results Table (Isolated Student Submissions)
 # ----------------------------------------------------
 class ExamResult(Base):
     __tablename__ = "exam_results"
@@ -73,7 +111,7 @@ class ExamResult(Base):
         index=True,
     )
     subject = Column(String(100), nullable=False, index=True)
-    semester = Column(Integer, nullable=False, index=True)
+    semester = Column(Integer, nullable=True, index=True)
     score = Column(Integer, nullable=False, default=0)
     max_score = Column(Integer, nullable=False, default=0)
     grades = Column(JSONB, nullable=False, default=list)
@@ -90,15 +128,27 @@ class ExamResult(Base):
 
 
 # ----------------------------------------------------
-# 3. Document Chunks Table (RAG & pgvector Store)
+# 4. Document Chunks Table (RAG & pgvector Store)
 # ----------------------------------------------------
 class DocumentChunk(Base):
     __tablename__ = "document_chunks"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    semester = Column(Integer, nullable=False, index=True)
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    document_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("user_documents.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    semester = Column(Integer, nullable=True, index=True)
     subject = Column(String(100), nullable=False, index=True)
-    doc_type = Column(String(50), nullable=False, index=True)  # 'NOTES' or 'PYQ'
+    doc_type = Column(String(50), nullable=False, default="NOTES", index=True)  # 'NOTES' or 'PYQ'
     source = Column(String(255), nullable=False)
     content = Column(Text, nullable=False)
     embedding = Column(Vector(384), nullable=False)
@@ -108,18 +158,39 @@ class DocumentChunk(Base):
         nullable=False,
     )
 
+    # Relationships
+    document = relationship("UserDocument", back_populates="chunks")
+
     __table_args__ = (
         Index("idx_doc_chunks_sem_subj_type", "semester", "subject", "doc_type"),
+        Index("idx_doc_chunks_user_subject", "user_id", "subject", "doc_type"),
     )
 
 
 def init_db():
-    """Initializes extension and creates all database tables."""
+    """Initializes extension, tables, and applies forward schema alterations."""
     with engine.connect() as conn:
         from sqlalchemy import text
+
         conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+
+        # Create all tables first
+        Base.metadata.create_all(bind=engine)
+
+        # Apply schema alterations for existing tables
+        alterations = [
+            "ALTER TABLE document_chunks ALTER COLUMN semester DROP NOT NULL;",
+            "ALTER TABLE exam_results ALTER COLUMN semester DROP NOT NULL;",
+            "ALTER TABLE document_chunks ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE CASCADE;",
+            "ALTER TABLE document_chunks ADD COLUMN IF NOT EXISTS document_id UUID REFERENCES user_documents(id) ON DELETE CASCADE;",
+        ]
+        for sql in alterations:
+            try:
+                conn.execute(text(sql))
+            except Exception as e:
+                print(f"Migration note for '{sql}': {e}")
+
         conn.commit()
-    Base.metadata.create_all(bind=engine)
 
 
 def get_db() -> Generator[Session, None, None]:

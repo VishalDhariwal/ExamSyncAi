@@ -67,7 +67,7 @@ export default function History() {
             <div className="flex justify-between items-start">
               <div>
                 <h3 className="text-xl font-bold text-gray-900">
-                  {test.subject} — Semester {test.semester}
+                  {test.subject}{test.semester ? ` — Semester ${test.semester}` : ""}
                 </h3>
                 {test.created_at && (
                   <p className="text-xs text-gray-400 mt-1">

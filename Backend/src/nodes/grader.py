@@ -63,6 +63,14 @@ def grader_node(state: ExamState) -> Dict[str, Any]:
 
         untrusted_student_block = wrap_untrusted_input(student_ans)
 
+        keywords = question.get("keywords") or question.get("expected_keywords") or []
+        keywords_text = ""
+        if keywords:
+            if isinstance(keywords, list):
+                keywords_text = f"Key Required Concepts / Keywords:\n{', '.join(keywords)}\n\n"
+            else:
+                keywords_text = f"Key Required Concepts / Keywords:\n{keywords}\n\n"
+
         # -----------------------------
         # Hardened Examiner-Only LLM Prompt
         # -----------------------------
@@ -83,7 +91,7 @@ Maximum Marks: {max_marks}
 Ideal Answer:
 {ideal_answer}
 
-{untrusted_student_block}
+{keywords_text}{untrusted_student_block}
 
 Evaluate based on:
 - Technical accuracy
@@ -101,15 +109,49 @@ Return ONLY JSON:
         try:
             response = client.chat.completions.create(
                 model=GROQ_MODEL,
-                messages=[{"role": "user", "content": prompt}],
+                messages=[
+                    {"role": "system", "content": "You are a strict university examiner. Return ONLY a valid JSON object."},
+                    {"role": "user", "content": prompt}
+                ],
                 temperature=0,
-                max_tokens=200,
+                max_tokens=600,
             )
+            text_output = (response.choices[0].message.content or "").strip()
 
-            text_output = response.choices[0].message.content or ""
-            text_output = text_output.replace("```json", "").replace("```", "").strip()
+            if not text_output:
+                # Retry if first attempt was empty
+                response = client.chat.completions.create(
+                    model=GROQ_MODEL,
+                    messages=[
+                        {"role": "system", "content": "You are a strict university examiner. Return ONLY a valid JSON object."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.1,
+                    max_tokens=600,
+                )
+                text_output = (response.choices[0].message.content or "").strip()
 
-            parsed = json.loads(text_output)
+            try:
+                parsed = json.loads(text_output)
+            except Exception:
+                import re
+                match = re.search(r"\{[\s\S]*\}", text_output)
+                parsed = None
+                if match:
+                    try:
+                        parsed = json.loads(match.group(0))
+                    except Exception:
+                        parsed = None
+                if not parsed:
+                    score_match = re.search(r'["\']?score["\']?\s*:\s*(\d+)', text_output)
+                    just_match = re.search(r'["\']?justification["\']?\s*:\s*["\']?([^"\',}\n]*)', text_output)
+                    if score_match:
+                        parsed = {
+                            "score": int(score_match.group(1)),
+                            "justification": just_match.group(1).strip() if just_match else "Evaluation extracted via pattern match."
+                        }
+                    else:
+                        raise ValueError(f"Failed to extract valid JSON from LLM response: {text_output[:100]}")
 
             # Security: Sanitize output, strip code leaks, and clamp score boundaries
             sanitized = sanitize_grader_output(
@@ -128,11 +170,18 @@ Return ONLY JSON:
 
         except Exception as e:
             print("Grading error:", e)
+            # Security: Never award default passing marks to unverified or suspicious inputs
+            fallback_score = 0
+            if telemetry.get("is_suspicious"):
+                fallback_reason = "Flagged: Submission violated exam instruction policies. 0 marks awarded."
+            else:
+                fallback_reason = "Answer could not be automatically evaluated. Flagged for manual review."
+
             grades.append({
                 "question_id": qid,
-                "score": max_marks // 2,
+                "score": fallback_score,
                 "max_marks": max_marks,
-                "justification": "Fallback evaluation.",
+                "justification": fallback_reason,
                 "topic": topic
             })
 
