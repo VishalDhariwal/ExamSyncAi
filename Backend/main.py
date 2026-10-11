@@ -295,20 +295,14 @@ def list_subjects(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Returns all unique classes/subjects available to the student."""
+    """Returns all unique classes/subjects from the student's uploaded study materials."""
     user_subjects = (
         db.query(UserDocument.subject)
         .filter(UserDocument.user_id == current_user.id)
         .distinct()
         .all()
     )
-    chunk_subjects = (
-        db.query(DocumentChunk.subject)
-        .filter(DocumentChunk.user_id.is_(None))
-        .distinct()
-        .all()
-    )
-    all_subjects = sorted(list({s[0] for s in user_subjects + chunk_subjects if s[0]}))
+    all_subjects = sorted(list({s[0] for s in user_subjects if s[0]}))
     return all_subjects
 
 

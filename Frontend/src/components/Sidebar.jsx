@@ -1,140 +1,94 @@
 import { motion } from "framer-motion"
-import { Link } from "react-router-dom"
+import { Link, useLocation, useNavigate } from "react-router-dom"
 
-export default function Sidebar({
-  email,
-  subject,
-  setSubject,
-  subjects = [],
-  generate,
-  loading = false,
-  activeTab = "hub",
-  setActiveTab = () => {},
-  isMarksBalanced = true,
-  targetTotal = 40,
-}) {
+export default function Sidebar() {
+  const location = useLocation()
+  const navigate = useNavigate()
+
+  const navItems = [
+    {
+      name: "Home",
+      path: "/dashboard",
+      icon: "🏠",
+    },
+    {
+      name: "Practice",
+      path: "/practice",
+      icon: "⚡",
+    },
+    {
+      name: "Study Materials",
+      path: "/materials",
+      icon: "📚",
+    },
+    {
+      name: "Reports",
+      path: "/reports",
+      icon: "📊",
+    },
+  ]
+
+  const handleLogout = () => {
+    localStorage.removeItem("token")
+    localStorage.removeItem("user")
+    localStorage.removeItem("userData")
+    localStorage.removeItem("exam")
+    localStorage.removeItem("result")
+    navigate("/")
+  }
+
   return (
-    <motion.div
-      initial={{ x: -200 }}
-      animate={{ x: 0 }}
-      className="w-72 bg-gray-900 text-white p-6 h-screen overflow-y-auto flex flex-col justify-between"
+    <motion.aside
+      initial={{ x: -80, opacity: 0 }}
+      animate={{ x: 0, opacity: 1 }}
+      className="w-52 bg-slate-900 text-slate-200 h-screen flex flex-col justify-between border-r border-slate-800 shadow-xl select-none flex-shrink-0"
     >
       <div>
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center font-bold text-lg shadow-lg shadow-blue-500/30">
-            ES
+        {/* Sleek Brand Mark */}
+        <div className="px-4 py-4 border-b border-slate-800 flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white font-black text-sm shadow-md shadow-blue-500/25">
+            ⚡
           </div>
-          <div>
-            <h2 className="text-lg font-bold leading-tight">ExamSync AI</h2>
-            <p className="text-xs text-gray-400">Adaptive Practice</p>
-          </div>
+          <span className="font-bold text-white text-base tracking-tight">ExamSync</span>
         </div>
 
-        <div className="bg-gray-800/80 rounded-xl p-3 mb-6 border border-gray-700/50">
-          <p className="text-xs text-gray-400 uppercase tracking-wider font-semibold mb-1">
-            Student Account
-          </p>
-          <p className="text-sm font-medium text-gray-200 truncate">{email || "Student"}</p>
-        </div>
+        {/* Clean Nav Links without Subheadings */}
+        <nav className="p-2 space-y-1 mt-3">
+          {navItems.map((item) => {
+            const isActive =
+              location.pathname === item.path ||
+              (item.path === "/reports" && location.pathname === "/history")
 
-        {/* ================= NAVIGATION TABS ================= */}
-        <div className="space-y-1 mb-6">
-          <button
-            onClick={() => setActiveTab("hub")}
-            className={`w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition flex items-center gap-2.5 ${
-              activeTab === "hub"
-                ? "bg-blue-600 text-white font-semibold shadow"
-                : "text-gray-300 hover:bg-gray-800 hover:text-white"
-            }`}
-          >
-            <span>📄</span> Upload & Study Hub
-          </button>
-
-          <button
-            onClick={() => setActiveTab("documents")}
-            className={`w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition flex items-center gap-2.5 ${
-              activeTab === "documents"
-                ? "bg-blue-600 text-white font-semibold shadow"
-                : "text-gray-300 hover:bg-gray-800 hover:text-white"
-            }`}
-          >
-            <span>📚</span> My Study Materials
-          </button>
-
-          <Link
-            to="/history"
-            className="w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition flex items-center gap-2.5 text-gray-300 hover:bg-gray-800 hover:text-white"
-          >
-            <span>📊</span> Exam History
-          </Link>
-        </div>
-
-        {/* ================= PRACTICE SELECTOR ================= */}
-        <div className="border-t border-gray-800 pt-5 mb-6">
-          <label className="block text-xs uppercase tracking-wider text-gray-400 font-semibold mb-2">
-            Target Subject / Class
-          </label>
-
-          <input
-            type="text"
-            value={subject}
-            onChange={(e) => setSubject(e.target.value)}
-            placeholder="e.g. DBMS, Physics, AI..."
-            className="w-full mb-3 px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-
-          {subjects.length > 0 && (
-            <div className="mb-4">
-              <p className="text-xs text-gray-400 mb-1.5">Quick Pick:</p>
-              <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto pr-1">
-                {subjects.map((sub) => (
-                  <button
-                    key={sub}
-                    type="button"
-                    onClick={() => setSubject(sub)}
-                    className={`text-xs px-2.5 py-1 rounded-md transition ${
-                      subject.toUpperCase() === sub.toUpperCase()
-                        ? "bg-blue-600 text-white font-semibold"
-                        : "bg-gray-800 text-gray-300 hover:bg-gray-700"
-                    }`}
-                  >
-                    {sub}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <button
-            onClick={() => {
-              if (activeTab !== "hub") setActiveTab("hub")
-              generate()
-            }}
-            disabled={loading || !subject.trim() || !isMarksBalanced}
-            className={`w-full py-3 rounded-lg font-semibold text-sm transition shadow-lg flex items-center justify-center gap-2 ${
-              loading || !subject.trim() || !isMarksBalanced
-                ? "bg-gray-700 text-gray-400 cursor-not-allowed"
-                : "bg-blue-600 hover:bg-blue-500 text-white shadow-blue-500/20 active:scale-95"
-            }`}
-          >
-            {loading ? (
-              <span>Generating Exam...</span>
-            ) : isMarksBalanced ? (
-              <>
-                <span>⚡</span> Launch Exam ({targetTotal}m)
-              </>
-            ) : (
-              <>
-                <span>🔒</span> Balance Rubric
-              </>
-            )}
-          </button>
-        </div>
+            return (
+              <Link
+                key={item.path}
+                to={item.path}
+                className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold transition duration-150 ${
+                  isActive
+                    ? "bg-blue-600 text-white shadow-sm shadow-blue-600/30"
+                    : "text-slate-400 hover:text-slate-100 hover:bg-slate-800/60"
+                }`}
+              >
+                <span className="text-base">{item.icon}</span>
+                <span className="flex-1 truncate">{item.name}</span>
+                {isActive && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                )}
+              </Link>
+            )
+          })}
+        </nav>
       </div>
 
-      <div className="text-xs text-gray-400 text-center border-t border-gray-800/80 pt-4">
-        ExamSync AI • RAG & pgvector
+      {/* Sidebar Footer */}
+      <div className="p-3 border-t border-slate-800 bg-slate-950/40">
+        <button
+          onClick={handleLogout}
+          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition duration-150"
+        >
+          <span>🚪</span> Log Out
+        </button>
       </div>
-    </motion.div>
+    </motion.aside>
   )
 }
