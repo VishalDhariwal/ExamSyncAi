@@ -51,22 +51,35 @@ def ingest_semester(semester_val: int, base_path="Data"):
 
                 all_docs.extend(docs)
 
-            # 2. PDF FILES
-            try:
-                pdf_loader = PyPDFDirectoryLoader(str(content_type_path))
-                pdf_docs = pdf_loader.load()
+            # 2. PDF FILES (Hardened with Magic Byte Validation & Size Limits)
+            for pdf_file in content_type_path.glob("*.pdf"):
+                try:
+                    if pdf_file.stat().st_size > 15 * 1024 * 1024:
+                        print(f"⚠️ Skipping {pdf_file.name}: exceeds 15MB size limit.")
+                        continue
 
-                for doc in pdf_docs:
-                    doc.metadata.update({
-                        "semester": semester_val,
-                        "subject": subject,
-                        "type": content_type,
-                        "source": doc.metadata.get("source", ""),
-                    })
+                    # Validate PDF Magic Bytes (%PDF-)
+                    with open(pdf_file, "rb") as f:
+                        header = f.read(5)
+                        if not header.startswith(b"%PDF-"):
+                            print(f"⚠️ Skipping {pdf_file.name}: Invalid PDF magic bytes.")
+                            continue
 
-                all_docs.extend(pdf_docs)
-            except Exception:
-                pass
+                    from langchain_community.document_loaders import PyPDFLoader
+                    pdf_loader = PyPDFLoader(str(pdf_file))
+                    pdf_docs = pdf_loader.load()
+
+                    for doc in pdf_docs:
+                        doc.metadata.update({
+                            "semester": semester_val,
+                            "subject": subject,
+                            "type": content_type,
+                            "source": pdf_file.name,
+                        })
+
+                    all_docs.extend(pdf_docs)
+                except Exception as e:
+                    print(f"Error loading {pdf_file.name}: {e}")
 
     if not all_docs:
         print(f"No documents found for semester {semester_val}")
