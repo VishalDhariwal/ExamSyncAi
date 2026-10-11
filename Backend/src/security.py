@@ -192,3 +192,53 @@ def sanitize_grader_output(
         "score": clamped_score,
         "justification": justification,
     }
+
+
+# ----------------------------------------------------
+# 8. Rate Limiting & User Quota Controls
+# ----------------------------------------------------
+MAX_EXAMS_PER_USER = 2
+MAX_DOCUMENTS_PER_USER = 5
+
+import time
+from collections import defaultdict
+from threading import Lock
+
+
+class InMemoryRateLimiter:
+    """
+    Thread-safe sliding-window in-memory rate limiter.
+    Protects API endpoints against DDoS, brute force, and LLM spam without external Redis.
+    """
+    def __init__(self):
+        self._records: Dict[str, list] = defaultdict(list)
+        self._lock = Lock()
+
+    def is_allowed(self, key: str, max_requests: int, window_seconds: int = 60) -> tuple:
+        """
+        Returns (is_allowed: bool, retry_after_seconds: int).
+        """
+        now = time.time()
+        cutoff = now - window_seconds
+        with self._lock:
+            timestamps = [t for t in self._records[key] if t > cutoff]
+            if len(timestamps) >= max_requests:
+                earliest = timestamps[0]
+                retry_after = max(1, int(window_seconds - (now - earliest)))
+                self._records[key] = timestamps
+                return False, retry_after
+            timestamps.append(now)
+            self._records[key] = timestamps
+            return True, 0
+
+    def reset(self, key: Optional[str] = None):
+        """Resets tracking records (useful for unit testing)."""
+        with self._lock:
+            if key:
+                self._records.pop(key, None)
+            else:
+                self._records.clear()
+
+
+rate_limiter = InMemoryRateLimiter()
+

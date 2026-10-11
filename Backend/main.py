@@ -13,7 +13,7 @@ else:
 
 import io
 from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form, Request
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
 from typing import List, Optional, cast
@@ -39,6 +39,7 @@ from src.auth import (
     JWT_SECRET_KEY,
     ALGORITHM,
 )
+from src.security import rate_limiter, MAX_EXAMS_PER_USER, MAX_DOCUMENTS_PER_USER
 from src.graph import app as graph_app
 from src.state import ExamState
 from src.nodes.ingest import ingest_user_document
@@ -72,6 +73,68 @@ app_api.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# -----------------------------
+# Rate Limiting Middleware
+# -----------------------------
+@app_api.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    # Bypass OPTIONS preflight
+    if request.method == "OPTIONS":
+        return await call_next(request)
+
+    # Determine real client IP behind reverse proxy (Render / Vercel)
+    forwarded_for = request.headers.get("x-forwarded-for")
+    if forwarded_for:
+        client_ip = forwarded_for.split(",")[0].strip()
+    else:
+        client_ip = request.client.host if request.client else "unknown"
+
+    path = request.url.path
+
+    # 1. Heavy AI Endpoints (Exam Generation & Evaluation)
+    if path in ("/generate-exam", "/submit-exam"):
+        allowed, retry_after = rate_limiter.is_allowed(f"llm:{client_ip}", max_requests=5, window_seconds=60)
+        if not allowed:
+            return JSONResponse(
+                status_code=429,
+                content={"detail": f"Rate limit reached for exam operations. Please wait {retry_after}s before requesting again."},
+                headers={"Retry-After": str(retry_after)},
+            )
+
+    # 2. Authentication Endpoints (Brute-force protection)
+    elif path in ("/auth/login", "/auth/register"):
+        allowed, retry_after = rate_limiter.is_allowed(f"auth:{client_ip}", max_requests=10, window_seconds=60)
+        if not allowed:
+            return JSONResponse(
+                status_code=429,
+                content={"detail": f"Too many authentication attempts. Please wait {retry_after}s before trying again."},
+                headers={"Retry-After": str(retry_after)},
+            )
+
+    # 3. Document Ingestion Endpoints
+    elif path.startswith("/documents/upload"):
+        allowed, retry_after = rate_limiter.is_allowed(f"upload:{client_ip}", max_requests=10, window_seconds=60)
+        if not allowed:
+            return JSONResponse(
+                status_code=429,
+                content={"detail": f"Upload rate limit exceeded. Please wait {retry_after}s before uploading again."},
+                headers={"Retry-After": str(retry_after)},
+            )
+
+    # 4. Global API Rate Limiting
+    else:
+        allowed, retry_after = rate_limiter.is_allowed(f"gen:{client_ip}", max_requests=120, window_seconds=60)
+        if not allowed:
+            return JSONResponse(
+                status_code=429,
+                content={"detail": f"Global rate limit reached. Please wait {retry_after}s before sending more requests."},
+                headers={"Retry-After": str(retry_after)},
+            )
+
+    return await call_next(request)
+
 
 
 # -----------------------------
@@ -192,12 +255,34 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
 
 
 @app_api.get("/auth/me")
-def get_me(current_user: User = Depends(get_current_user)):
-    """Returns the authenticated student profile."""
+def get_me(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Returns the authenticated student profile along with active usage quotas."""
+    exam_count = (
+        db.query(ExamResult)
+        .filter(
+            ExamResult.user_id == current_user.id,
+            ExamResult.status != "DISCARDED",
+        )
+        .count()
+    )
+    doc_count = (
+        db.query(UserDocument)
+        .filter(UserDocument.user_id == current_user.id)
+        .count()
+    )
     return {
         "id": str(current_user.id),
         "email": current_user.email,
         "full_name": current_user.full_name,
+        "usage": {
+            "exams_used": exam_count,
+            "exams_max": MAX_EXAMS_PER_USER,
+            "docs_used": doc_count,
+            "docs_max": MAX_DOCUMENTS_PER_USER,
+        },
     }
 
 
@@ -216,12 +301,25 @@ async def upload_document(
     """
     Uploads and safely parses a study document (PDF or TXT/MD),
     chunks it, computes vector embeddings, and links it to the user.
+    Enforces a strict 5-file upload limit per user.
     """
     clean_subject = subject.strip()
     if not clean_subject:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Subject or Class name is required.",
+        )
+
+    # Enforce maximum 5 files upload quota
+    existing_docs = (
+        db.query(UserDocument)
+        .filter(UserDocument.user_id == current_user.id)
+        .count()
+    )
+    if existing_docs >= MAX_DOCUMENTS_PER_USER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Upload quota reached: Each student is limited to uploading a maximum of {MAX_DOCUMENTS_PER_USER} study files. You currently have {existing_docs} files stored. Please delete an existing file to upload a new one.",
         )
 
     file_bytes = await file.read()
@@ -656,9 +754,23 @@ def generate_exam(
 ):
     """
     Generates an exam using PostgreSQL pgvector context and Groq LLM.
-    Persists the generated exam questions and rubric configuration directly
-    in PostgreSQL marked as PENDING so it can be resumed from any device.
+    Enforces a strict lifetime quota of 2 mock exams per user.
     """
+    # Enforce quota: A student can generate and give mock exam at most 2 times
+    existing_exams_count = (
+        db.query(ExamResult)
+        .filter(
+            ExamResult.user_id == current_user.id,
+            ExamResult.status != "DISCARDED",
+        )
+        .count()
+    )
+    if existing_exams_count >= MAX_EXAMS_PER_USER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Mock exam quota reached: Each student is limited to generating and giving {MAX_EXAMS_PER_USER} mock exams. You currently have {existing_exams_count} mock exams on record.",
+        )
+
     config_dict = None
     if data.exam_config:
         if data.exam_config.total_marks <= 0:
@@ -938,6 +1050,21 @@ def submit_exam(
             )
         except Exception:
             pass
+
+    if not exam_record:
+        completed_count = (
+            db.query(ExamResult)
+            .filter(
+                ExamResult.user_id == current_user.id,
+                ExamResult.status == "COMPLETED",
+            )
+            .count()
+        )
+        if completed_count >= MAX_EXAMS_PER_USER:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Mock exam quota reached: You have already completed the maximum of {MAX_EXAMS_PER_USER} mock exams.",
+            )
 
     from datetime import datetime, timezone
 

@@ -113,6 +113,14 @@ export default function Materials() {
       return
     }
 
+    if (documents.length >= 5) {
+      setUploadStatus({
+        type: "error",
+        message: "Upload quota reached: Each student can store a maximum of 5 files. Please delete an existing document first.",
+      })
+      return
+    }
+
     try {
       setUploading(true)
       setUploadStatus(null)
@@ -276,16 +284,41 @@ export default function Materials() {
               </select>
             )}
 
+            {/* File Storage Quota Badge */}
+            <div className={`px-3 py-2 rounded-xl text-xs font-semibold border flex items-center gap-1.5 whitespace-nowrap ${
+              documents.length >= 5 
+                ? "bg-amber-50 text-amber-800 border-amber-200" 
+                : "bg-gray-50 text-gray-700 border-gray-200"
+            }`}>
+              <HardDrive className={`w-3.5 h-3.5 ${documents.length >= 5 ? "text-amber-600" : "text-gray-500"}`} />
+              <span>Storage Quota:</span>
+              <span className="font-bold text-gray-900">{documents.length} / 5</span>
+              {documents.length >= 5 && (
+                <span className="text-[10px] bg-amber-200/80 text-amber-900 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">
+                  Full
+                </span>
+              )}
+            </div>
+
             {/* Primary Upload Button that opens the popup modal */}
             <button
               onClick={() => {
+                if (documents.length >= 5) {
+                  alert("Upload limit reached: You can upload a maximum of 5 files. Please delete an existing file to upload a new one.")
+                  return
+                }
                 setUploadStatus(null)
                 setIsUploadModalOpen(true)
               }}
-              className="bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition shadow-md shadow-blue-500/20 flex items-center gap-2 whitespace-nowrap active:scale-95"
+              disabled={documents.length >= 5}
+              className={`font-bold text-xs px-4 py-2.5 rounded-xl transition flex items-center gap-2 whitespace-nowrap active:scale-95 ${
+                documents.length >= 5
+                  ? "bg-gray-200 text-gray-400 border border-gray-300 cursor-not-allowed shadow-none"
+                  : "bg-blue-600 hover:bg-blue-500 text-white shadow-md shadow-blue-500/20"
+              }`}
             >
               <Upload className="w-4 h-4" />
-              <span>Upload Document</span>
+              <span>{documents.length >= 5 ? "Storage Limit Reached" : "Upload Document"}</span>
             </button>
           </div>
         </div>

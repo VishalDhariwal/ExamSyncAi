@@ -21,7 +21,7 @@ import {
   BookOpen,
   FileText,
 } from "lucide-react"
-import { generateExam, getSubjects, getSubjectMaterials } from "../api/api"
+import { generateExam, getSubjects, getSubjectMaterials, getMe } from "../api/api"
 import {
   getPendingExams,
   resumePendingExam,
@@ -81,15 +81,27 @@ export default function Practice() {
   const [breakdown, setBreakdown] = useState(PRESETS.standard_40.breakdown)
   const [isCustomMode, setIsCustomMode] = useState(false)
   const [pendingExams, setPendingExams] = useState([])
+  const [usageQuota, setUsageQuota] = useState(null)
 
   const refreshPending = async () => {
     const list = await getPendingExams()
     setPendingExams(list || [])
   }
 
-  // Refresh pending exams on mount
+  // Refresh pending exams and user quota on mount
   useEffect(() => {
     refreshPending()
+    const loadUsage = async () => {
+      try {
+        const res = await getMe()
+        if (res.data?.usage) {
+          setUsageQuota(res.data.usage)
+        }
+      } catch (err) {
+        console.warn("Could not load usage quota:", err)
+      }
+    }
+    loadUsage()
   }, [])
 
   // Fetch subjects strictly from user's materials
@@ -234,6 +246,11 @@ export default function Practice() {
       return
     }
 
+    if (usageQuota && usageQuota.exams_used >= usageQuota.exams_max) {
+      setErrorMsg(`Mock exam quota reached: You have used ${usageQuota.exams_used}/${usageQuota.exams_max} mock exams. Each student is limited to 2 mock exams.`)
+      return
+    }
+
     try {
       setLoading(true)
       setErrorMsg("")
@@ -265,7 +282,17 @@ export default function Practice() {
     } catch (err) {
       console.error("Failed to generate exam:", err)
       const detail = err.response?.data?.detail || err.message
-      setErrorMsg(`Exam generation failed: ${detail}`)
+      if (err.response?.status === 429) {
+        setErrorMsg(`Rate limit exceeded: ${detail}`)
+      } else if (err.response?.status === 403) {
+        setErrorMsg(`Quota reached: ${detail}`)
+        try {
+          const res = await getMe()
+          if (res.data?.usage) setUsageQuota(res.data.usage)
+        } catch (_) {}
+      } else {
+        setErrorMsg(`Exam generation failed: ${detail}`)
+      }
     } finally {
       setLoading(false)
     }
@@ -701,12 +728,25 @@ export default function Practice() {
             </div>
           </div>
 
+          {/* Quota limit warning banner */}
+          {usageQuota && usageQuota.exams_used >= usageQuota.exams_max && (
+            <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs px-4 py-3 rounded-xl flex items-start gap-2.5 font-medium">
+              <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="font-bold">Mock Exam Quota Limit Reached ({usageQuota.exams_used} / {usageQuota.exams_max})</p>
+                <p className="text-[11px] text-amber-700 mt-0.5">
+                  Each student account is limited to generating and giving a maximum of 2 mock exams.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Launch Exam Button with validation state */}
           <button
             onClick={handleGenerate}
-            disabled={!subject.trim() || !isMarksBalanced || loading}
+            disabled={!subject.trim() || !isMarksBalanced || loading || (usageQuota && usageQuota.exams_used >= usageQuota.exams_max)}
             className={`w-full py-3.5 rounded-xl font-bold text-sm transition shadow-lg flex items-center justify-center gap-2 ${
-              !subject.trim() || !isMarksBalanced
+              !subject.trim() || !isMarksBalanced || (usageQuota && usageQuota.exams_used >= usageQuota.exams_max)
                 ? "bg-gray-200 text-gray-400 cursor-not-allowed"
                 : loading
                 ? "bg-blue-600/80 text-white cursor-wait"
@@ -717,6 +757,11 @@ export default function Practice() {
               <>
                 <Loader2 className="w-4 h-4 animate-spin text-white" />
                 <span>Launching...</span>
+              </>
+            ) : usageQuota && usageQuota.exams_used >= usageQuota.exams_max ? (
+              <>
+                <Lock className="w-4 h-4 text-gray-400" />
+                <span>Mock Exam Limit Reached ({usageQuota.exams_used}/{usageQuota.exams_max})</span>
               </>
             ) : isMarksBalanced ? (
               <>
