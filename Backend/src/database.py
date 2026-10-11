@@ -189,15 +189,20 @@ class DocumentChunk(Base):
 
 def init_db():
     """Initializes extension, tables, and applies forward schema alterations."""
-    with engine.connect() as conn:
-        from sqlalchemy import text
+    from sqlalchemy import text
 
-        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+    # Step 1: Ensure vector extension exists and commit immediately
+    with engine.begin() as conn:
+        try:
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+        except Exception as e:
+            print(f"Vector extension note: {e}")
 
-        # Create all tables first
-        Base.metadata.create_all(bind=engine)
+    # Step 2: Create all tables
+    Base.metadata.create_all(bind=engine)
 
-        # Apply schema alterations for existing tables
+    # Step 3: Apply backward-compatible schema alterations
+    with engine.begin() as conn:
         alterations = [
             "ALTER TABLE document_chunks ALTER COLUMN semester DROP NOT NULL;",
             "ALTER TABLE exam_results ALTER COLUMN semester DROP NOT NULL;",
@@ -211,8 +216,6 @@ def init_db():
                 conn.execute(text(sql))
             except Exception as e:
                 print(f"Migration note for '{sql}': {e}")
-
-        conn.commit()
 
 
 def get_db() -> Generator[Session, None, None]:
