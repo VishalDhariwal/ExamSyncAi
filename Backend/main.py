@@ -4,8 +4,12 @@ from dotenv import load_dotenv
 
 # Load environment configuration
 load_dotenv()
-os.environ.setdefault("HF_HUB_OFFLINE", "1")
-os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+if os.getenv("RENDER") or os.getenv("ENVIRONMENT") == "production":
+    os.environ["HF_HUB_OFFLINE"] = "0"
+    os.environ["TRANSFORMERS_OFFLINE"] = "0"
+else:
+    os.environ.setdefault("HF_HUB_OFFLINE", "1")
+    os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 
 import io
 from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form, Request
@@ -52,12 +56,18 @@ app_api = FastAPI(title="StudySync AI Backend", lifespan=lifespan)
 # -----------------------------
 # CORS
 # -----------------------------
+cors_origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+frontend_url = os.getenv("FRONTEND_URL")
+if frontend_url and frontend_url not in cors_origins:
+    cors_origins.append(frontend_url)
+
 app_api.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
+    allow_origins=cors_origins,
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

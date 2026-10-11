@@ -28,6 +28,12 @@ DATABASE_URL = os.getenv(
     "postgresql+psycopg2://vishaldhariwal@localhost:5432/examsync_db",
 )
 
+# Standardize cloud PostgreSQL URL scheme for psycopg2 compatibility
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
+elif DATABASE_URL.startswith("postgresql://") and not DATABASE_URL.startswith("postgresql+psycopg2://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
+
 engine = create_engine(
     DATABASE_URL,
     pool_pre_ping=True,

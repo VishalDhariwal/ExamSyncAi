@@ -1,7 +1,9 @@
 import axios from "axios"
 
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000"
+
 const API = axios.create({
-  baseURL: "http://127.0.0.1:8000"
+  baseURL: BASE_URL,
 })
 
 // Attach JWT access token to every outgoing request
@@ -47,7 +49,7 @@ export const updateDocument = (id, data) => API.patch(`/documents/${id}`, data)
 
 export const getDocumentPdfUrl = (id) => {
   const token = localStorage.getItem("token")
-  return `http://127.0.0.1:8000/documents/${id}/view?token=${encodeURIComponent(token || "")}`
+  return `${BASE_URL}/documents/${id}/view?token=${encodeURIComponent(token || "")}`
 }
 
 export default API
