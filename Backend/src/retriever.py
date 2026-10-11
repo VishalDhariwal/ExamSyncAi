@@ -1,23 +1,13 @@
-from pathlib import Path
 from typing import List, Optional, Tuple, Dict, Any
-from langchain_chroma import Chroma
+from pathlib import Path
 from langchain_huggingface import HuggingFaceEmbeddings
-import os
+
+from src.database import SessionLocal, DocumentChunk
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-CHROMA_DIR = BASE_DIR / "chroma_db"
 DATA_DIR = BASE_DIR / "Data"
 
 embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-
-
-def get_vectorstore(semester: int) -> Chroma:
-    """Connect to the persistent ChromaDB directory for a given semester."""
-    persist_dir = CHROMA_DIR / f"sem{semester}"
-    return Chroma(
-        persist_directory=str(persist_dir),
-        embedding_function=embeddings,
-    )
 
 
 def retrieve_chunks(
@@ -26,58 +16,49 @@ def retrieve_chunks(
     query: str,
     doc_type: Optional[str] = None,
     k: int = 8,
-) -> List[Tuple[Any, float]]:
+) -> List[Tuple[DocumentChunk, float]]:
     """
-    Retrieves chunks from ChromaDB with distance scores, filtered by subject and optionally doc_type.
+    Retrieves chunks directly from PostgreSQL using pgvector cosine distance.
+    Filtered by semester, subject, and optionally doc_type ('NOTES' or 'PYQ').
     """
-    vectorstore = get_vectorstore(semester)
-
-    filter_dict = {}
-    if subject:
-        filter_dict["subject"] = subject.upper()
-    if doc_type:
-        filter_dict["type"] = doc_type
-
-    if len(filter_dict) == 1:
-        search_filter = filter_dict
-    elif len(filter_dict) > 1:
-        search_filter = {"$and": [{key: val} for key, val in filter_dict.items()]}
-    else:
-        search_filter = None
-
+    db = SessionLocal()
     try:
-        if search_filter:
-            results = vectorstore.similarity_search_with_score(
-                query, k=k, filter=search_filter
-            )
-        else:
-            results = vectorstore.similarity_search_with_score(query, k=k)
+        query_emb = embeddings.embed_query(query)
+        distance_expr = DocumentChunk.embedding.cosine_distance(query_emb).label("distance")
+
+        q = db.query(DocumentChunk, distance_expr).filter(
+            DocumentChunk.semester == semester,
+            DocumentChunk.subject == subject.upper(),
+        )
+
+        if doc_type:
+            q = q.filter(DocumentChunk.doc_type == doc_type.upper())
+
+        results = q.order_by(distance_expr.asc()).limit(k).all()
+        return results
     except Exception as e:
-        print(f"Chroma filtered search notice: {e}, running fallback query...")
-        try:
-            results = vectorstore.similarity_search_with_score(query, k=k)
-        except Exception:
-            results = []
-
-    return results
+        print(f"PostgreSQL pgvector search notice: {e}")
+        return []
+    finally:
+        db.close()
 
 
-def rerank_chunks(scored_docs: List[Tuple[Any, float]], top_n: int = 5) -> List[str]:
+def rerank_chunks(scored_docs: List[Tuple[DocumentChunk, float]], top_n: int = 5) -> List[str]:
     """
-    Reranks chunks by distance (lower distance = higher similarity)
-    and deduplicates repetitive content snippets.
+    Reranks chunks by vector cosine distance (smaller distance = higher similarity)
+    and deduplicates similar snippets.
     """
     if not scored_docs:
         return []
 
-    # Sort ascending by distance score
+    # Sort ascending by distance (cosine distance 0 = identical)
     sorted_docs = sorted(scored_docs, key=lambda x: x[1])
 
     seen_snippets = set()
     selected_texts = []
 
     for doc, dist in sorted_docs:
-        content = doc.page_content.strip()
+        content = doc.content.strip()
         preview = content[:100].lower()
 
         if preview in seen_snippets:
@@ -93,12 +74,12 @@ def rerank_chunks(scored_docs: List[Tuple[Any, float]], top_n: int = 5) -> List[
 
 def get_exam_context(semester: int, subject: str) -> Dict[str, str]:
     """
-    End-to-end retrieval and reranking for both NOTES and PYQs.
-    Falls back to direct files if Chroma vectorstore is empty for this semester.
+    Retrieves and reranks syllabus notes and PYQ patterns from PostgreSQL.
+    Falls back to disk if uningested semester.
     """
     subject_clean = subject.upper()
 
-    # 1. Retrieve & Rerank Notes
+    # 1. Retrieve & Rerank Notes from PostgreSQL
     notes_query = f"Core concepts, definitions, architecture, and important syllabus topics for {subject_clean}"
     notes_scored = retrieve_chunks(
         semester=semester,
@@ -110,7 +91,7 @@ def get_exam_context(semester: int, subject: str) -> Dict[str, str]:
     notes_reranked = rerank_chunks(notes_scored, top_n=5)
     notes_context = "\n\n---\n\n".join(notes_reranked)
 
-    # 2. Retrieve & Rerank PYQs
+    # 2. Retrieve & Rerank PYQs from PostgreSQL
     pyq_query = f"Previous year exam questions, long answer questions, 2-mark definitions, marks distribution for {subject_clean}"
     pyq_scored = retrieve_chunks(
         semester=semester,
@@ -122,7 +103,7 @@ def get_exam_context(semester: int, subject: str) -> Dict[str, str]:
     pyq_reranked = rerank_chunks(pyq_scored, top_n=6)
     pyq_context = "\n\n---\n\n".join(pyq_reranked)
 
-    # Fallback to disk if Chroma returned nothing (e.g. uningested semester)
+    # Fallback to disk if PostgreSQL is empty for this semester
     if not notes_context.strip():
         notes_file = DATA_DIR / f"sem{semester}" / subject_clean / "NOTES" / "notes.txt"
         if notes_file.exists():
@@ -143,9 +124,3 @@ def get_exam_context(semester: int, subject: str) -> Dict[str, str]:
         "notes_context": notes_context,
         "pyq_context": pyq_context,
     }
-
-
-def get_retriever(semester: int, k: int = 4):
-    """Backwards-compatible retriever function."""
-    vectorstore = get_vectorstore(semester)
-    return vectorstore.as_retriever(search_kwargs={"k": k})

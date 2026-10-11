@@ -7,7 +7,9 @@ export default function Header() {
 
   const logout = () => {
 
+    localStorage.removeItem("token")
     localStorage.removeItem("user")
+    localStorage.removeItem("userData")
     localStorage.removeItem("exam")
     localStorage.removeItem("result")
 
