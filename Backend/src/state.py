@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 # 1. Structured Data for your Dashboard
 class DiagnosticMetric(BaseModel):
     topic: str
-    score: int
+    score: Union[int, float]
     feedback: str
     status: str # "Strong" | "Weak" | "Improving"
 
@@ -14,8 +14,11 @@ class DiagnosticMetric(BaseModel):
 class ExamState(TypedDict):
     # --- Identifiers ---
     student_id: str
-    semester: int
     subject: str
+    selected_pyqs: Optional[List[str]]
+    selected_topics: Optional[List[str]]
+    semester: Optional[int]
+    exam_config: Optional[dict]
     
     # --- Communication (The Memory) ---
     # operator.add ensures we append to history rather than overwriting

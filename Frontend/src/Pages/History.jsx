@@ -59,50 +59,54 @@ export default function History() {
           </div>
         )}
 
-        {tests.map((test) => (
-          <div
-            key={test.id}
-            className="bg-white shadow-md border border-gray-100 rounded-xl p-6 mb-4 hover:shadow-lg transition"
-          >
-            <div className="flex justify-between items-start">
-              <div>
-                <h3 className="text-xl font-bold text-gray-900">
-                  {test.subject} — Semester {test.semester}
-                </h3>
-                {test.created_at && (
-                  <p className="text-xs text-gray-400 mt-1">
-                    {new Date(test.created_at).toLocaleString()}
-                  </p>
-                )}
-              </div>
-              <div className="bg-blue-50 text-blue-700 px-4 py-2 rounded-lg font-bold text-lg">
-                {test.score} / {test.max_score}
-              </div>
-            </div>
+        {!loading && tests.length > 0 && (
+          <div className="space-y-4 max-h-[720px] overflow-y-auto pr-2 custom-scrollbar">
+            {tests.map((test) => (
+              <div
+                key={test.id}
+                className="bg-white shadow-md border border-gray-100 rounded-xl p-6 hover:shadow-lg transition"
+              >
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h3 className="text-xl font-bold text-gray-900">
+                      {test.subject}
+                    </h3>
+                    {test.created_at && (
+                      <p className="text-xs text-gray-400 mt-1">
+                        {new Date(test.created_at).toLocaleString()}
+                      </p>
+                    )}
+                  </div>
+                  <div className="bg-blue-50 text-blue-700 px-4 py-2 rounded-lg font-bold text-lg">
+                    {test.score} / {test.max_score}
+                  </div>
+                </div>
 
-            {test.diagnostic && (
-              <div className="mt-4 pt-4 border-t border-gray-100">
-                <p className="text-sm font-medium text-gray-700">
-                  {test.diagnostic.overall_feedback}
-                </p>
+                {test.diagnostic && (
+                  <div className="mt-4 pt-4 border-t border-gray-100">
+                    <p className="text-sm font-medium text-gray-700">
+                      {test.diagnostic.overall_feedback}
+                    </p>
 
-                {test.diagnostic.weak_topics && test.diagnostic.weak_topics.length > 0 && (
-                  <div className="mt-2 flex items-center gap-2 flex-wrap">
-                    <span className="text-xs text-red-600 font-semibold">Focus Areas:</span>
-                    {test.diagnostic.weak_topics.map((t, idx) => (
-                      <span
-                        key={idx}
-                        className="bg-red-50 text-red-600 text-xs px-2 py-0.5 rounded-full border border-red-100"
-                      >
-                        {t}
-                      </span>
-                    ))}
+                    {test.diagnostic.weak_topics && test.diagnostic.weak_topics.length > 0 && (
+                      <div className="mt-2 flex items-center gap-2 flex-wrap">
+                        <span className="text-xs text-red-600 font-semibold">Focus Areas:</span>
+                        {test.diagnostic.weak_topics.map((t, idx) => (
+                          <span
+                            key={idx}
+                            className="bg-red-50 text-red-600 text-xs px-2 py-0.5 rounded-full border border-red-100"
+                          >
+                            {t}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
-            )}
+            ))}
           </div>
-        ))}
+        )}
       </div>
     </div>
   )

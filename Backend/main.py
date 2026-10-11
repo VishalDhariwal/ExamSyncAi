@@ -1,16 +1,43 @@
-from fastapi import FastAPI, Depends, HTTPException, status
+import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment configuration
+load_dotenv()
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
+os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+
+import io
+from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form, Request
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
 from typing import List, Optional, cast
 from contextlib import asynccontextmanager
-import os
-from pathlib import Path
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
+import uuid as uuid_pkg
+import jwt
 
-from src.database import init_db, get_db, User, ExamResult
-from src.auth import hash_password, verify_password, create_access_token, get_current_user
+from src.database import (
+    init_db,
+    get_db,
+    User,
+    ExamResult,
+    UserDocument,
+    DocumentChunk,
+)
+from src.auth import (
+    hash_password,
+    verify_password,
+    create_access_token,
+    get_current_user,
+    JWT_SECRET_KEY,
+    ALGORITHM,
+)
 from src.graph import app as graph_app
 from src.state import ExamState
+from src.nodes.ingest import ingest_user_document
 
 
 @asynccontextmanager
@@ -20,7 +47,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app_api = FastAPI(title="ExamSync AI Backend", lifespan=lifespan)
+app_api = FastAPI(title="StudySync AI Backend", lifespan=lifespan)
 
 # -----------------------------
 # CORS
@@ -51,10 +78,24 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class QuestionTierConfig(BaseModel):
+    type: str  # "mcq" | "short" | "medium" | "long"
+    marks: int
+    count: int
+
+
+class ExamConfig(BaseModel):
+    total_marks: int
+    breakdown: List[QuestionTierConfig]
+
+
 class ExamRequest(BaseModel):
     student_id: Optional[str] = None
-    semester: int
     subject: str
+    selected_pyqs: Optional[List[str]] = None
+    selected_topics: Optional[List[str]] = None
+    semester: Optional[int] = None
+    exam_config: Optional[ExamConfig] = None
 
 
 class SubmitExam(BaseModel):
@@ -151,15 +192,485 @@ def get_me(current_user: User = Depends(get_current_user)):
 
 
 # -----------------------------
-# Generate Exam Endpoint
+# Document Management & Ingestion Endpoints
+# -----------------------------
+@app_api.post("/documents/upload", status_code=status.HTTP_201_CREATED)
+async def upload_document(
+    file: UploadFile = File(...),
+    subject: str = Form(...),
+    doc_type: str = Form("NOTES"),
+    semester: Optional[int] = Form(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Uploads and safely parses a study document (PDF or TXT/MD),
+    chunks it, computes vector embeddings, and links it to the user.
+    """
+    clean_subject = subject.strip()
+    if not clean_subject:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Subject or Class name is required.",
+        )
+
+    file_bytes = await file.read()
+    try:
+        doc = ingest_user_document(
+            user_id=current_user.id,
+            file_bytes=file_bytes,
+            filename=file.filename or "uploaded_document.pdf",
+            subject=clean_subject,
+            doc_type=doc_type,
+            semester=semester,
+            db=db,
+        )
+        return {
+            "id": str(doc.id),
+            "title": doc.title,
+            "filename": doc.filename,
+            "subject": doc.subject,
+            "doc_type": doc.doc_type,
+            "file_size": doc.file_size,
+            "chunk_count": doc.chunk_count,
+            "created_at": doc.created_at.isoformat() if doc.created_at else None,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Document processing error: {e}",
+        )
+
+
+@app_api.get("/documents")
+def list_documents(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Lists all study materials uploaded by the authenticated student."""
+    docs = (
+        db.query(UserDocument)
+        .filter(UserDocument.user_id == current_user.id)
+        .order_by(UserDocument.created_at.desc())
+        .all()
+    )
+    return [
+        {
+            "id": str(d.id),
+            "title": d.title,
+            "filename": d.filename,
+            "subject": d.subject,
+            "doc_type": d.doc_type,
+            "file_size": d.file_size,
+            "chunk_count": d.chunk_count,
+            "created_at": d.created_at.isoformat() if d.created_at else None,
+        }
+        for d in docs
+    ]
+
+
+@app_api.delete("/documents/{document_id}")
+def delete_document(
+    document_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Deletes an uploaded document and its vector chunks."""
+    try:
+        doc_uuid = uuid_pkg.UUID(document_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid document ID format.",
+        )
+
+    doc = (
+        db.query(UserDocument)
+        .filter(UserDocument.id == doc_uuid, UserDocument.user_id == current_user.id)
+        .first()
+    )
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found.",
+        )
+
+    db.query(DocumentChunk).filter(DocumentChunk.document_id == doc.id).delete()
+    db.delete(doc)
+    db.commit()
+    return {"message": "Document deleted successfully"}
+
+
+class UpdateDocumentRequest(BaseModel):
+    subject: str
+
+
+@app_api.patch("/documents/{document_id}")
+def update_document(
+    document_id: str,
+    data: UpdateDocumentRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Updates the subject/course classification for an uploaded document."""
+    try:
+        doc_uuid = uuid_pkg.UUID(document_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid document ID format.",
+        )
+
+    doc = (
+        db.query(UserDocument)
+        .filter(UserDocument.id == doc_uuid, UserDocument.user_id == current_user.id)
+        .first()
+    )
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found.",
+        )
+
+    new_sub = data.subject.strip().upper()
+    if not new_sub:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Subject name cannot be empty.",
+        )
+
+    doc.subject = new_sub
+    chunks = db.query(DocumentChunk).filter(DocumentChunk.document_id == doc.id).all()
+    for c in chunks:
+        c.subject = new_sub
+    db.commit()
+    db.refresh(doc)
+
+    return {
+        "id": str(doc.id),
+        "title": doc.title,
+        "filename": doc.filename,
+        "subject": doc.subject,
+        "doc_type": doc.doc_type,
+        "file_size": doc.file_size,
+        "chunk_count": doc.chunk_count,
+    }
+
+
+@app_api.get("/documents/{document_id}/view")
+def view_document_pdf(
+    document_id: str,
+    request: Request,
+    token: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """
+    Streams the uploaded PDF document for in-browser viewing.
+    Accepts JWT token in Authorization header or query parameter for easy iframe/embed viewing.
+    """
+    auth_header = request.headers.get("authorization")
+    raw_token = None
+    if auth_header and auth_header.startswith("Bearer "):
+        raw_token = auth_header.split(" ")[1]
+    elif token:
+        raw_token = token
+
+    if not raw_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication token required.",
+        )
+
+    try:
+        payload = jwt.decode(raw_token, JWT_SECRET_KEY, algorithms=[ALGORITHM])
+        user_id_str = payload.get("sub")
+        if not user_id_str:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token.")
+        user_uuid = uuid_pkg.UUID(user_id_str)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired authentication token.",
+        )
+
+    try:
+        doc_uuid = uuid_pkg.UUID(document_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid document ID format.",
+        )
+
+    doc = (
+        db.query(UserDocument)
+        .filter(UserDocument.id == doc_uuid, UserDocument.user_id == user_uuid)
+        .first()
+    )
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found.",
+        )
+
+    # 1. Prioritize streaming directly from PostgreSQL binary store
+    if doc.file_data:
+        return StreamingResponse(
+            io.BytesIO(doc.file_data),
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"inline; filename=\"{doc.filename}\""
+            },
+        )
+
+    # 2. Fallback to file on disk if previously saved
+    target_path = None
+    if doc.file_path and Path(doc.file_path).exists():
+        target_path = Path(doc.file_path)
+
+    if not target_path or not target_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="PDF file not found in database or server storage.",
+        )
+
+    return FileResponse(
+        path=str(target_path),
+        media_type="application/pdf",
+        filename=doc.filename,
+        content_disposition_type="inline",
+    )
+
+
+@app_api.get("/subjects")
+def list_subjects(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Returns all unique classes/subjects from the student's uploaded study materials and core course tags."""
+    user_subjects = (
+        db.query(UserDocument.subject)
+        .filter(UserDocument.user_id == current_user.id)
+        .distinct()
+        .all()
+    )
+    public_subjects = (
+        db.query(DocumentChunk.subject)
+        .filter(DocumentChunk.user_id.is_(None))
+        .distinct()
+        .all()
+    )
+    combined = {s[0] for s in user_subjects if s[0]} | {s[0] for s in public_subjects if s[0]} | {"DSA", "DBMS"}
+    all_subjects = sorted(list(combined))
+    return all_subjects
+
+
+@app_api.get("/subjects/{subject_name}/materials")
+def get_subject_materials(
+    subject_name: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Returns all notes and distinct past exam papers (PYQs) associated with this subject,
+    enabling students to review syllabus notes and multi-select PYQ papers.
+    """
+    subject_clean = subject_name.strip().upper()
+
+    # 1. User uploaded materials for this subject
+    user_docs = (
+        db.query(UserDocument)
+        .filter(
+            UserDocument.user_id == current_user.id,
+            UserDocument.subject == subject_clean,
+        )
+        .order_by(UserDocument.created_at.desc())
+        .all()
+    )
+
+    # 2. Public / system chunk sources for this subject
+    public_sources = (
+        db.query(DocumentChunk.doc_type, DocumentChunk.source, func.count(DocumentChunk.id))
+        .filter(
+            DocumentChunk.subject == subject_clean,
+            DocumentChunk.user_id.is_(None),
+        )
+        .group_by(DocumentChunk.doc_type, DocumentChunk.source)
+        .all()
+    )
+
+    notes_list = []
+    pyqs_list = []
+    seen_sources = set()
+
+    for d in user_docs:
+        item = {
+            "id": str(d.id),
+            "title": d.title or d.filename,
+            "filename": d.filename,
+            "doc_type": d.doc_type,
+            "chunk_count": d.chunk_count,
+            "is_user_uploaded": True,
+        }
+        seen_sources.add(d.filename.lower())
+        if d.doc_type == "PYQ":
+            pyqs_list.append(item)
+        else:
+            notes_list.append(item)
+
+    for dtype, src, count in public_sources:
+        src_clean = (src or "reference_document").strip()
+        if src_clean.lower() in seen_sources:
+            continue
+        seen_sources.add(src_clean.lower())
+
+        item = {
+            "id": src_clean,
+            "title": src_clean,
+            "filename": src_clean,
+            "doc_type": dtype.upper(),
+            "chunk_count": count,
+            "is_user_uploaded": False,
+        }
+        if dtype.upper() == "PYQ":
+            pyqs_list.append(item)
+        else:
+            notes_list.append(item)
+
+    return {
+        "subject": subject_clean,
+        "notes": notes_list,
+        "pyqs": pyqs_list,
+    }
+
+
+@app_api.get("/subjects/{subject_name}/weak-topics")
+def get_subject_weak_topics(
+    subject_name: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Returns all detected weak topics for the given subject based on the student's exam history,
+    plus syllabus focus topics from uploaded course notes.
+    """
+    sub_clean = subject_name.strip().upper()
+
+    # 1. Gather from user's completed exams for this subject
+    exams = (
+        db.query(ExamResult)
+        .filter(
+            ExamResult.user_id == current_user.id,
+            ExamResult.subject == sub_clean,
+            ExamResult.status == "COMPLETED",
+        )
+        .all()
+    )
+
+    topic_counts = {}
+    for exam in exams:
+        diag = exam.diagnostic or {}
+        weak_list = diag.get("weak_topics", [])
+        if isinstance(weak_list, list):
+            for t in weak_list:
+                t_str = str(t).strip()
+                if t_str:
+                    topic_counts[t_str] = topic_counts.get(t_str, 0) + 1
+
+        topic_analysis = diag.get("topic_analysis", [])
+        if isinstance(topic_analysis, list):
+            for item in topic_analysis:
+                if isinstance(item, dict) and item.get("status") == "Weak":
+                    t_str = str(item.get("topic", "")).strip()
+                    if t_str:
+                        topic_counts[t_str] = topic_counts.get(t_str, 0) + 1
+
+        grades = exam.grades or []
+        if isinstance(grades, list):
+            for g in grades:
+                if isinstance(g, dict):
+                    score = g.get("score", 0)
+                    max_m = g.get("max_marks", 1)
+                    topic = str(g.get("topic", "")).strip()
+                    if topic and max_m > 0 and (score / max_m) < 0.6:
+                        topic_counts[topic] = topic_counts.get(topic, 0) + 1
+
+    result = []
+    for topic, count in sorted(topic_counts.items(), key=lambda x: x[1], reverse=True):
+        result.append({
+            "topic": topic,
+            "count": count,
+            "status": "Weak",
+            "is_flagged": True,
+        })
+
+    # If no past exam weaknesses exist, provide syllabus topics from document chunks
+    if not result:
+        chunks = (
+            db.query(DocumentChunk.content)
+            .filter(
+                DocumentChunk.subject == sub_clean,
+                DocumentChunk.doc_type == "NOTES",
+            )
+            .limit(10)
+            .all()
+        )
+        syllabus_concepts = set()
+        for (chunk_content,) in chunks:
+            for line in chunk_content.splitlines():
+                line = line.strip("-* 0123456789.):")
+                if 8 <= len(line) <= 60 and not line.startswith("http"):
+                    syllabus_concepts.add(line)
+                if len(syllabus_concepts) >= 12:
+                    break
+        for sc in sorted(list(syllabus_concepts))[:12]:
+            result.append({
+                "topic": sc,
+                "count": 0,
+                "status": "Syllabus Topic",
+                "is_flagged": False,
+            })
+
+    return result
+
+
+# -----------------------------
+# Generate Exam Endpoint (Saves to PostgreSQL)
 # -----------------------------
 @app_api.post("/generate-exam")
-def generate_exam(data: ExamRequest):
-    """Generates an exam using PostgreSQL pgvector context and Groq LLM."""
+def generate_exam(
+    data: ExamRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Generates an exam using PostgreSQL pgvector context and Groq LLM.
+    Persists the generated exam questions and rubric configuration directly
+    in PostgreSQL marked as PENDING so it can be resumed from any device.
+    """
+    config_dict = None
+    if data.exam_config:
+        if data.exam_config.total_marks <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Total marks must be greater than 0.",
+            )
+
+        computed_total = sum(t.marks * t.count for t in data.exam_config.breakdown)
+        if computed_total != data.exam_config.total_marks:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Rubric validation failed: Sum of question marks ({computed_total}) does not equal total marks ({data.exam_config.total_marks}).",
+            )
+        config_dict = data.exam_config.model_dump()
+
     state_dict = {
-        "student_id": data.student_id or "guest",
-        "semester": data.semester,
-        "subject": data.subject,
+        "student_id": str(current_user.id),
+        "subject": data.subject.strip().upper(),
+        "selected_pyqs": data.selected_pyqs or [],
+        "selected_topics": data.selected_topics or [],
+        "exam_config": config_dict,
         "messages": [],
         "image_bytes": None,
         "raw_transcription": None,
@@ -174,7 +685,208 @@ def generate_exam(data: ExamRequest):
 
     state = cast(ExamState, state_dict)
     result = graph_app.invoke(state)
+
+    exam_questions = result.get("exam_questions", [])
+    total_marks = (
+        data.exam_config.total_marks
+        if data.exam_config
+        else sum(q.get("marks", 0) for q in exam_questions)
+    )
+
+    # Immediately persist generated exam session in PostgreSQL
+    exam_id = uuid_pkg.uuid4()
+    exam_record = ExamResult(
+        id=exam_id,
+        user_id=current_user.id,
+        subject=data.subject.strip().upper(),
+        semester=None,
+        status="PENDING",
+        exam_config=config_dict or {},
+        exam_questions=exam_questions,
+        saved_answers={},
+        score=0,
+        max_score=total_marks,
+        grades=[],
+        diagnostic=None,
+    )
+    db.add(exam_record)
+    db.commit()
+    db.refresh(exam_record)
+
+    result["id"] = str(exam_record.id)
+    result["status"] = exam_record.status
+    result["saved_answers"] = {}
     return result
+
+
+class SaveDraftRequest(BaseModel):
+    saved_answers: dict
+
+
+@app_api.put("/exams/{exam_id}/draft")
+def save_exam_draft(
+    exam_id: str,
+    data: SaveDraftRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Saves in-progress student answers to PostgreSQL without submitting.
+    Ensures answers are preserved across devices and browser sessions.
+    """
+    try:
+        e_uuid = uuid_pkg.UUID(exam_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid exam ID format.")
+
+    exam = (
+        db.query(ExamResult)
+        .filter(ExamResult.id == e_uuid, ExamResult.user_id == current_user.id)
+        .first()
+    )
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam session not found.")
+
+    exam.saved_answers = data.saved_answers
+    exam.status = "PENDING"
+    from datetime import datetime, timezone
+    exam.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(exam)
+
+    return {
+        "id": str(exam.id),
+        "status": exam.status,
+        "saved_answers": exam.saved_answers,
+        "answered_count": len([v for v in exam.saved_answers.values() if str(v).strip()]),
+        "updated_at": exam.updated_at.isoformat() if exam.updated_at else None,
+    }
+
+
+@app_api.get("/exams/pending")
+def list_pending_exams(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Returns all pending/in-progress exams for the authenticated student from PostgreSQL, deduplicating identical tests."""
+    pending = (
+        db.query(ExamResult)
+        .filter(ExamResult.user_id == current_user.id, ExamResult.status == "PENDING")
+        .order_by(ExamResult.updated_at.desc().nullslast(), ExamResult.created_at.desc())
+        .all()
+    )
+
+    seen_keys = set()
+    unique_pending = []
+    duplicates_to_delete = []
+
+    for e in pending:
+        first_q = ""
+        if e.exam_questions and len(e.exam_questions) > 0 and isinstance(e.exam_questions[0], dict):
+            first_q = str(e.exam_questions[0].get("question", ""))[:80]
+        
+        q_sig = (
+            e.subject,
+            len(e.exam_questions or []),
+            first_q,
+        )
+        if q_sig in seen_keys:
+            duplicates_to_delete.append(e)
+        else:
+            seen_keys.add(q_sig)
+            unique_pending.append(e)
+
+    if duplicates_to_delete:
+        for dup in duplicates_to_delete:
+            try:
+                db.delete(dup)
+            except Exception:
+                pass
+        db.commit()
+
+    return [
+        {
+            "id": str(e.id),
+            "subject": e.subject,
+            "semester": e.semester,
+            "status": e.status,
+            "exam_config": e.exam_config,
+            "exam_questions": e.exam_questions,
+            "saved_answers": e.saved_answers or {},
+            "answeredCount": len([v for v in (e.saved_answers or {}).values() if str(v).strip()]),
+            "totalQuestions": len(e.exam_questions or []),
+            "created_at": e.created_at.isoformat() if e.created_at else None,
+            "savedAt": e.updated_at.isoformat() if e.updated_at else (e.created_at.isoformat() if e.created_at else None),
+        }
+        for e in unique_pending
+    ]
+
+
+@app_api.get("/exams/{exam_id}")
+def get_exam_session(
+    exam_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Fetches an existing exam session from PostgreSQL by ID for resuming."""
+    try:
+        e_uuid = uuid_pkg.UUID(exam_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid exam ID format.")
+
+    exam = (
+        db.query(ExamResult)
+        .filter(ExamResult.id == e_uuid, ExamResult.user_id == current_user.id)
+        .first()
+    )
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found.")
+
+    return {
+        "id": str(exam.id),
+        "subject": exam.subject,
+        "semester": exam.semester,
+        "status": exam.status,
+        "exam_config": exam.exam_config,
+        "exam_questions": exam.exam_questions,
+        "saved_answers": exam.saved_answers or {},
+        "answeredCount": len([v for v in (exam.saved_answers or {}).values() if str(v).strip()]),
+        "totalQuestions": len(exam.exam_questions or []),
+        "score": exam.score,
+        "max_score": exam.max_score,
+        "grades": exam.grades,
+        "diagnostic": exam.diagnostic,
+        "created_at": exam.created_at.isoformat() if exam.created_at else None,
+        "savedAt": exam.updated_at.isoformat() if exam.updated_at else None,
+    }
+
+
+@app_api.delete("/exams/{exam_id}")
+def discard_exam(
+    exam_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Deletes or discards an uncompleted exam attempt from PostgreSQL."""
+    try:
+        e_uuid = uuid_pkg.UUID(exam_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid exam ID format.")
+
+    exam = (
+        db.query(ExamResult)
+        .filter(ExamResult.id == e_uuid, ExamResult.user_id == current_user.id)
+        .first()
+    )
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found.")
+
+    if exam.status == "COMPLETED":
+        return {"message": "Exam is completed and preserved in history."}
+
+    db.delete(exam)
+    db.commit()
+    return {"message": "Exam attempt discarded successfully"}
 
 
 # -----------------------------
@@ -187,8 +899,8 @@ def submit_exam(
     db: Session = Depends(get_db),
 ):
     """
-    Evaluates answers and stores the result in PostgreSQL.
-    Strictly isolated: linked solely to current_user.id.
+    Evaluates answers with LangGraph and stores evaluation report, score, and grades in PostgreSQL.
+    Transitions an existing PENDING exam record to COMPLETED.
     """
     state = cast(ExamState, data.exam_state)
     state["student_answers"] = data.student_answers
@@ -199,21 +911,61 @@ def submit_exam(
     grades = result.get("grades", [])
     total_score = sum(g.get("score", 0) for g in grades)
     max_score = sum(g.get("max_marks", 0) for g in grades)
+    diagnostic_report = result.get("diagnostic_report")
 
-    # Save to PostgreSQL under authenticated student's user_id
-    exam_record = ExamResult(
-        user_id=current_user.id,
-        subject=result.get("subject", state.get("subject", "General")),
-        semester=result.get("semester", state.get("semester", 1)),
-        score=total_score,
-        max_score=max_score,
-        grades=grades,
-        diagnostic=result.get("diagnostic_report"),
-    )
+    answers_map = {ans["question_id"]: ans["answer_text"] for ans in data.student_answers}
 
-    db.add(exam_record)
+    # Find existing exam session in DB if available
+    existing_id = state.get("id")
+    exam_record = None
+    if existing_id:
+        try:
+            e_uuid = uuid_pkg.UUID(str(existing_id))
+            exam_record = (
+                db.query(ExamResult)
+                .filter(ExamResult.id == e_uuid, ExamResult.user_id == current_user.id)
+                .first()
+            )
+        except Exception:
+            pass
+
+    from datetime import datetime, timezone
+
+    if exam_record:
+        exam_record.status = "COMPLETED"
+        exam_record.score = total_score
+        exam_record.max_score = max_score
+        exam_record.grades = grades
+        exam_record.diagnostic = diagnostic_report
+        exam_record.saved_answers = answers_map
+        exam_record.updated_at = datetime.now(timezone.utc)
+        if not exam_record.exam_questions and state.get("exam_questions"):
+            exam_record.exam_questions = state.get("exam_questions")
+    else:
+        exam_record = ExamResult(
+            user_id=current_user.id,
+            subject=result.get("subject", state.get("subject", "General")),
+            semester=result.get("semester", state.get("semester")),
+            status="COMPLETED",
+            exam_config=state.get("exam_config", {}),
+            exam_questions=state.get("exam_questions", []),
+            saved_answers=answers_map,
+            score=total_score,
+            max_score=max_score,
+            grades=grades,
+            diagnostic=diagnostic_report,
+        )
+        db.add(exam_record)
+
     db.commit()
     db.refresh(exam_record)
+
+    result["id"] = str(exam_record.id)
+    result["status"] = exam_record.status
+    result["score"] = total_score
+    result["max_score"] = max_score
+    result["grades"] = grades
+    result["diagnostic"] = diagnostic_report
 
     return result
 
@@ -227,12 +979,12 @@ def get_exam_history(
     db: Session = Depends(get_db),
 ):
     """
-    Returns only the past exams taken by the authenticated student.
+    Returns completed exams taken by the authenticated student from PostgreSQL.
     Guarantees isolation: no student can view another student's exams.
     """
     records = (
         db.query(ExamResult)
-        .filter(ExamResult.user_id == current_user.id)
+        .filter(ExamResult.user_id == current_user.id, ExamResult.status != "PENDING")
         .order_by(ExamResult.created_at.desc())
         .all()
     )
@@ -242,10 +994,13 @@ def get_exam_history(
             "id": str(r.id),
             "subject": r.subject,
             "semester": r.semester,
+            "status": r.status,
             "score": r.score,
             "max_score": r.max_score,
             "grades": r.grades,
             "diagnostic": r.diagnostic,
+            "exam_questions": r.exam_questions,
+            "saved_answers": r.saved_answers,
             "created_at": r.created_at.isoformat() if r.created_at else None,
         }
         for r in records
@@ -255,27 +1010,23 @@ def get_exam_history(
 # -----------------------------
 # Structure Endpoint
 # -----------------------------
-BASE_DIR = Path(__file__).resolve().parent
-DATA_PATH = BASE_DIR / "Data"
-
-
 @app_api.get("/structure")
-def get_structure():
+def get_structure(db: Session = Depends(get_db)):
+    """Returns available subjects and semesters directly from PostgreSQL."""
     structure = {}
-    if not DATA_PATH.exists():
-        return structure
+    chunks = db.query(
+        DocumentChunk.semester,
+        DocumentChunk.subject,
+        DocumentChunk.doc_type,
+    ).distinct().all()
 
-    for sem in os.listdir(DATA_PATH):
-        sem_path = os.path.join(DATA_PATH, sem)
-        if not os.path.isdir(sem_path):
-            continue
-
-        structure[sem] = {}
-        for subject in os.listdir(sem_path):
-            subject_path = os.path.join(sem_path, subject)
-            if not os.path.isdir(subject_path):
-                continue
-
-            structure[sem][subject] = os.listdir(subject_path)
+    for sem, subject, doc_type in chunks:
+        sem_key = f"sem{sem}" if sem else "general"
+        if sem_key not in structure:
+            structure[sem_key] = {}
+        if subject not in structure[sem_key]:
+            structure[sem_key][subject] = []
+        if doc_type not in structure[sem_key][subject]:
+            structure[sem_key][subject].append(doc_type)
 
     return structure
