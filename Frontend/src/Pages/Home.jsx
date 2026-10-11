@@ -154,9 +154,6 @@ export default function Home() {
                 <h2 className="text-sm font-bold text-gray-900 tracking-tight">
                   In-Progress Mock Exams ({pendingExams.length})
                 </h2>
-                <p className="text-xs text-gray-500">
-                  Pick up right where you left off. All your saved draft answers are preserved in PostgreSQL.
-                </p>
               </div>
             </div>
           </div>

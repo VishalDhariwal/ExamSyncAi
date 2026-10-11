@@ -9,6 +9,7 @@ from sqlalchemy import (
     Column,
     String,
     Integer,
+    Float,
     Text,
     DateTime,
     ForeignKey,
@@ -119,8 +120,8 @@ class ExamResult(Base):
     exam_config = Column(JSONB, nullable=False, default=dict)
     exam_questions = Column(JSONB, nullable=False, default=list)
     saved_answers = Column(JSONB, nullable=False, default=dict)
-    score = Column(Integer, nullable=False, default=0)
-    max_score = Column(Integer, nullable=False, default=0)
+    score = Column(Float, nullable=False, default=0.0)
+    max_score = Column(Float, nullable=False, default=0.0)
     grades = Column(JSONB, nullable=False, default=list)
     diagnostic = Column(JSONB, nullable=True)
     created_at = Column(
@@ -194,6 +195,8 @@ def init_db():
         alterations = [
             "ALTER TABLE document_chunks ALTER COLUMN semester DROP NOT NULL;",
             "ALTER TABLE exam_results ALTER COLUMN semester DROP NOT NULL;",
+            "ALTER TABLE exam_results ALTER COLUMN score TYPE DOUBLE PRECISION;",
+            "ALTER TABLE exam_results ALTER COLUMN max_score TYPE DOUBLE PRECISION;",
             "ALTER TABLE document_chunks ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE CASCADE;",
             "ALTER TABLE document_chunks ADD COLUMN IF NOT EXISTS document_id UUID REFERENCES user_documents(id) ON DELETE CASCADE;",
         ]

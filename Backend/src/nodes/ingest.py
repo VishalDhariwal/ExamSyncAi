@@ -17,6 +17,46 @@ embeddings = HuggingFaceEmbeddings(
 )
 
 
+def validate_academic_content(text: str, subject: str) -> None:
+    """
+    Rejects clearly non-academic documents (resumes, CVs, cover letters, etc.)
+    before they pollute the RAG vector store.
+    Raises ValueError with a user-friendly message if the document is rejected.
+    """
+    text_lower = text.lower()
+
+    # Strong resume/CV indicator phrases
+    resume_signals = [
+        "work experience", "professional experience", "career objective",
+        "references available", "curriculum vitae",
+        "linkedin.com/in/", "github.com/",
+        "cgpa", "gpa:", "grade point average",
+        "internship at", "interned at", "i am a", "i have worked",
+        "key skills:", "technical skills:", "core competencies:",
+        "objective:", "career summary", "profile summary",
+        "hobbies:", "interests:", "languages known",
+    ]
+    # Academic/course material indicator phrases
+    academic_signals = [
+        "chapter", "theorem", "definition", "algorithm", "lemma",
+        "example:", "solution:", "proof:", "formula", "equation",
+        "lecture", "syllabus", "unit", "module", "topic",
+        "introduction to", "overview of", "1.1", "1.2", "2.1",
+        "refer to", "as shown in figure", "table", "diagram",
+        "question", "answer", "marks", "exam", "assignment",
+    ]
+
+    resume_score = sum(1 for s in resume_signals if s in text_lower)
+    academic_score = sum(1 for s in academic_signals if s in text_lower)
+
+    # Only block if resume signals strongly dominate with minimal academic content
+    if resume_score >= 4 and academic_score < 3:
+        raise ValueError(
+            "This document appears to be a resume, CV, or personal profile rather than academic course material. "
+            "Please upload lecture notes, textbooks, syllabi, or past exam papers as study materials."
+        )
+
+
 def ingest_semester(semester_val: int, base_path="Data"):
     """
     Reads semester course documents (Notes & PYQs), chunks them,
@@ -95,8 +135,8 @@ def ingest_semester(semester_val: int, base_path="Data"):
 
     # Split documents into chunks
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=800,
-        chunk_overlap=100,
+        chunk_size=1500,
+        chunk_overlap=200,
     )
     splits = splitter.split_documents(all_docs)
 
@@ -190,10 +230,13 @@ def ingest_user_document(
             "Could not extract sufficient text from this document. Please ensure the document has readable text."
         )
 
+    # Validate that this is academic content, not a resume/CV/personal doc
+    validate_academic_content(raw_text, subject)
+
     # Split into chunks
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=800,
-        chunk_overlap=100,
+        chunk_size=1500,
+        chunk_overlap=200,
     )
     chunks_text = splitter.split_text(raw_text)
 

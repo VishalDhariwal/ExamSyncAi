@@ -18,9 +18,20 @@ export async function getPendingExams() {
   try {
     const res = await getPendingExamsApi()
     if (res.data && Array.isArray(res.data)) {
-      // Sync local cache with DB
-      localStorage.setItem(PENDING_EXAMS_KEY, JSON.stringify(res.data))
-      return res.data
+      // Deduplicate DB records by unique id and question signature
+      const seen = new Set()
+      const deduplicated = []
+      for (const item of res.data) {
+        const firstQ = item.exam_questions?.[0]?.question || ""
+        const sig = `${item.subject}_${item.totalQuestions || 0}_${firstQ.slice(0, 60)}`
+        if (!seen.has(item.id) && !seen.has(sig)) {
+          seen.add(item.id)
+          seen.add(sig)
+          deduplicated.push(item)
+        }
+      }
+      localStorage.setItem(PENDING_EXAMS_KEY, JSON.stringify(deduplicated))
+      return deduplicated
     }
   } catch (err) {
     console.warn("Could not reach DB for pending exams, falling back to local cache:", err)
@@ -31,7 +42,19 @@ export async function getPendingExams() {
     const raw = localStorage.getItem(PENDING_EXAMS_KEY)
     if (!raw) return []
     const list = JSON.parse(raw)
-    return Array.isArray(list) ? list : []
+    if (!Array.isArray(list)) return []
+    const seen = new Set()
+    const deduplicated = []
+    for (const item of list) {
+      const firstQ = item.exam_questions?.[0]?.question || ""
+      const sig = `${item.subject}_${item.totalQuestions || 0}_${firstQ.slice(0, 60)}`
+      if (!seen.has(item.id) && !seen.has(sig)) {
+        seen.add(item.id)
+        seen.add(sig)
+        deduplicated.push(item)
+      }
+    }
+    return deduplicated
   } catch (e) {
     return []
   }
@@ -42,7 +65,7 @@ export async function getPendingExams() {
  */
 export async function savePendingExam(exam, answers = {}) {
   if (!exam) return null
-  const id = exam.id
+  const id = exam.id || exam.exam_id
 
   const totalQuestions = exam.exam_questions?.length || 0
   const answeredCount = Object.keys(answers).filter(
@@ -59,11 +82,24 @@ export async function savePendingExam(exam, answers = {}) {
     savedAt: new Date().toISOString(),
   }
 
-  // Fast local write
+  // Fast local write - remove any existing record with matching ID or identical test signature
   try {
     const raw = localStorage.getItem(PENDING_EXAMS_KEY)
     const existing = raw ? JSON.parse(raw) : []
-    const updated = Array.isArray(existing) ? existing.filter((e) => e.id !== id) : []
+    const firstQ = exam.exam_questions?.[0]?.question || ""
+    const currentSig = `${exam.subject}_${totalQuestions}_${firstQ.slice(0, 60)}`
+
+    const updated = Array.isArray(existing)
+      ? existing.filter((e) => {
+          if (!e) return false
+          if (e.id && id && e.id === id) return false
+          const eFirstQ = e.exam_questions?.[0]?.question || ""
+          const eSig = `${e.subject}_${e.totalQuestions || e.exam_questions?.length || 0}_${eFirstQ.slice(0, 60)}`
+          if (eSig === currentSig) return false
+          return true
+        })
+      : []
+
     updated.unshift(pendingRecord)
     localStorage.setItem(PENDING_EXAMS_KEY, JSON.stringify(updated))
     localStorage.setItem("exam", JSON.stringify(pendingRecord))

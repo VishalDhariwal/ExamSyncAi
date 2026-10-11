@@ -165,12 +165,15 @@ def sanitize_grader_output(
     2. Strips generated code blocks from justification if ideal_answer is non-code,
        preventing student chatbot/homework solving abuse.
     """
-    # 1. Enforce mathematical clamping
+    # 1. Enforce mathematical clamping with half-mark rounding support
     try:
-        raw_score = int(parsed_json.get("score", 0))
+        raw_score = float(parsed_json.get("score", 0))
     except (ValueError, TypeError):
-        raw_score = 0
-    clamped_score = max(0, min(raw_score, max_marks))
+        raw_score = 0.0
+    clamped_score = max(0.0, min(raw_score, float(max_marks)))
+    clamped_score = round(clamped_score * 2) / 2
+    if isinstance(clamped_score, float) and clamped_score.is_integer():
+        clamped_score = int(clamped_score)
 
     # 2. Output Code-Leak Sanitizer
     justification = str(parsed_json.get("justification", "")).strip()

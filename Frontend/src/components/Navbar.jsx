@@ -43,12 +43,16 @@ export default function Navbar() {
     <header className="sticky top-0 z-30 bg-white border-b border-gray-200/80 shadow-xs w-full">
       <div className="w-full px-8 h-16 flex items-center justify-between relative">
         {/* Far Left: Brand Mark */}
-        <Link to="/dashboard" className="flex items-center gap-2.5 group flex-shrink-0 z-10">
-          <div className="w-8 h-8 rounded-xl bg-blue-600 flex items-center justify-center text-white font-black text-sm shadow-md shadow-blue-500/25 group-hover:scale-105 transition">
-            <Zap className="w-4 h-4 fill-white" />
+        <Link to="/dashboard" className="flex items-center gap-3 group flex-shrink-0 z-10">
+          <div className="w-10 h-10 rounded-xl bg-white border border-gray-200/80 shadow-xs flex items-center justify-center p-1 group-hover:scale-105 transition">
+            <img
+              src="/logo.png"
+              alt="StudySync AI"
+              className="w-full h-full object-contain"
+            />
           </div>
           <span className="font-extrabold text-gray-900 text-lg tracking-tight">
-            ExamSync
+            StudySync <span className="text-blue-600">AI</span>
           </span>
         </Link>
 

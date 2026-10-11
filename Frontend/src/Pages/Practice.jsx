@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom"
 import {
   Zap,
@@ -17,9 +17,11 @@ import {
   CheckSquare,
   Layers,
   Sliders,
+  Loader2,
+  BookOpen,
+  FileText,
 } from "lucide-react"
-import { generateExam, getSubjects } from "../api/api"
-import AILoader from "../components/AILoader"
+import { generateExam, getSubjects, getSubjectMaterials } from "../api/api"
 import {
   getPendingExams,
   resumePendingExam,
@@ -113,6 +115,67 @@ export default function Practice() {
     fetchSubs()
   }, [searchParams])
 
+  // Materials State (All Notes & Multi-Select PYQ Papers)
+  const [materials, setMaterials] = useState({ notes: [], pyqs: [] })
+  const [loadingMaterials, setLoadingMaterials] = useState(false)
+  const [selectedPyqs, setSelectedPyqs] = useState([])
+  const [pyqDropdownOpen, setPyqDropdownOpen] = useState(false)
+  const pyqDropdownRef = useRef(null)
+
+  // Close PYQ dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (pyqDropdownRef.current && !pyqDropdownRef.current.contains(e.target)) {
+        setPyqDropdownOpen(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [])
+
+  // Whenever subject changes, fetch materials for this subject
+  useEffect(() => {
+    if (!subject) {
+      setMaterials({ notes: [], pyqs: [] })
+      setSelectedPyqs([])
+      setPyqDropdownOpen(false)
+      return
+    }
+
+    const fetchMaterials = async () => {
+      try {
+        setLoadingMaterials(true)
+        const res = await getSubjectMaterials(subject)
+        const data = res.data || { notes: [], pyqs: [] }
+        setMaterials(data)
+        // By default, select all available PYQ papers for this subject
+        const allPyqIds = (data.pyqs || []).map((p) => p.id)
+        setSelectedPyqs(allPyqIds)
+      } catch (err) {
+        console.error("Failed to load subject materials:", err)
+      } finally {
+        setLoadingMaterials(false)
+      }
+    }
+
+    fetchMaterials()
+  }, [subject])
+
+  const togglePyqSelection = (id) => {
+    setSelectedPyqs((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    )
+  }
+
+  const selectAllPyqs = () => {
+    const allIds = (materials.pyqs || []).map((p) => p.id)
+    setSelectedPyqs(allIds)
+  }
+
+  const clearAllPyqs = () => {
+    setSelectedPyqs([])
+  }
+
   // Calculated total marks from questions breakdown
   const calculatedTotal = breakdown.reduce(
     (sum, tier) => sum + (Number(tier.marks) || 0) * (Number(tier.count) || 0),
@@ -177,6 +240,7 @@ export default function Practice() {
 
       const payload = {
         subject: subject.trim(),
+        selected_pyqs: selectedPyqs,
         exam_config: {
           total_marks: targetTotal,
           breakdown: breakdown.map((t) => ({
@@ -190,7 +254,7 @@ export default function Practice() {
       const res = await generateExam(payload)
       const newExam = {
         ...res.data,
-        id: `exam_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        id: res.data.id || `exam_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
         status: "PENDING",
         user_email: localStorage.getItem("user") || "",
         createdAt: new Date().toISOString(),
@@ -209,8 +273,6 @@ export default function Practice() {
 
   return (
     <div className="w-full space-y-8">
-      {loading && <AILoader />}
-
       {/* Pending Exams Banner */}
       {pendingExams.length > 0 && (
         <div className="bg-white rounded-2xl p-4 sm:p-5 border border-blue-100 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -275,46 +337,165 @@ export default function Practice() {
         )}
 
         <div className="space-y-6">
-          {/* Target Subject Dropdown */}
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-gray-700 mb-2">
-              Target Subject / Class
-            </label>
-            <div className="relative">
-              <select
-                value={subject}
-                onChange={(e) => setSubject(e.target.value)}
-                disabled={subjects.length === 0}
-                className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white transition cursor-pointer appearance-none shadow-xs disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
-              >
-                {subjects.length > 0 ? (
-                  subjects.map((sub) => (
-                    <option key={sub} value={sub}>
-                      {sub}
-                    </option>
-                  ))
-                ) : (
-                  <option value="">No study materials uploaded yet</option>
-                )}
-              </select>
-              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-gray-400">
-                <ChevronDown className="w-4 h-4" />
+          {/* 2 Dropdowns: 1. Subject / Notes, 2. PYQ Multi-Select */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            {/* Dropdown 1: Subject / Notes */}
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-gray-700 mb-2">
+                Subject / Notes
+              </label>
+              <div className="relative">
+                <select
+                  value={subject}
+                  onChange={(e) => {
+                    setSubject(e.target.value)
+                    setPyqDropdownOpen(false)
+                  }}
+                  disabled={subjects.length === 0}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white transition cursor-pointer appearance-none shadow-xs disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
+                >
+                  {subjects.length > 0 ? (
+                    subjects.map((sub) => (
+                      <option key={sub} value={sub}>
+                        {sub}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="">No study materials uploaded yet</option>
+                  )}
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-gray-400">
+                  <ChevronDown className="w-4 h-4" />
+                </div>
               </div>
+
+              {subjects.length === 0 && (
+                <p className="text-xs text-amber-600 mt-2 font-medium flex items-center gap-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                  <span>You have not uploaded any study materials yet.</span>
+                  <button
+                    type="button"
+                    onClick={() => navigate("/materials")}
+                    className="text-blue-600 font-bold underline hover:text-blue-700 ml-1"
+                  >
+                    Upload notes in Study Materials &rarr;
+                  </button>
+                </p>
+              )}
             </div>
 
-            {subjects.length === 0 && (
-              <p className="text-xs text-amber-600 mt-2 font-medium flex items-center gap-1.5">
-                <AlertTriangle className="w-3.5 h-3.5" />
-                <span>You have not uploaded any study materials yet.</span>
-                <button
-                  type="button"
-                  onClick={() => navigate("/materials")}
-                  className="text-blue-600 font-bold underline hover:text-blue-700 ml-1"
-                >
-                  Upload notes in Study Materials &rarr;
-                </button>
-              </p>
-            )}
+            {/* Dropdown 2: Previous Year Questions (PYQ) Multi-Select */}
+            <div className="relative" ref={pyqDropdownRef}>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-xs font-bold uppercase tracking-wider text-gray-700">
+                  Previous Year Questions (PYQ)
+                </label>
+                {selectedPyqs.length > 0 && (
+                  <span className="text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-md">
+                    {selectedPyqs.length} Selected
+                  </span>
+                )}
+              </div>
+
+              {/* Dropdown Button Trigger */}
+              <button
+                type="button"
+                onClick={() => setPyqDropdownOpen((prev) => !prev)}
+                disabled={!subject || loadingMaterials || (materials.pyqs?.length || 0) === 0}
+                className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm font-semibold text-left text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white transition cursor-pointer flex items-center justify-between shadow-xs disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
+              >
+                <span className="truncate">
+                  {loadingMaterials
+                    ? "Loading PYQs..."
+                    : (materials.pyqs?.length || 0) === 0
+                    ? `No PYQs available for ${subject || "selected subject"}`
+                    : selectedPyqs.length === 0
+                    ? "Select PYQ papers (0 selected)"
+                    : selectedPyqs.length === materials.pyqs.length
+                    ? `All PYQs Selected (${materials.pyqs.length} papers)`
+                    : `${selectedPyqs.length} of ${materials.pyqs.length} PYQ papers selected`}
+                </span>
+                <ChevronDown
+                  className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform duration-200 ${
+                    pyqDropdownOpen ? "rotate-180" : ""
+                  }`}
+                />
+              </button>
+
+              {/* Multi-Select Dropdown Menu Popover */}
+              {pyqDropdownOpen && (
+                <div className="absolute z-30 left-0 right-0 mt-2 bg-white rounded-2xl border border-gray-200 shadow-xl overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50/80 border-b border-gray-100 text-xs">
+                    <span className="font-bold text-gray-700">
+                      {materials.pyqs?.length || 0} PYQ Papers for {subject}
+                    </span>
+                    {materials.pyqs && materials.pyqs.length > 0 && (
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={selectAllPyqs}
+                          className="font-bold text-blue-600 hover:text-blue-700 hover:underline"
+                        >
+                          Select All
+                        </button>
+                        <span className="text-gray-300">|</span>
+                        <button
+                          type="button"
+                          onClick={clearAllPyqs}
+                          className="font-bold text-gray-500 hover:text-gray-700 hover:underline"
+                        >
+                          Clear
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="max-h-56 overflow-y-auto divide-y divide-gray-100">
+                    {materials.pyqs && materials.pyqs.length > 0 ? (
+                      materials.pyqs.map((p) => {
+                        const isChecked = selectedPyqs.includes(p.id)
+                        return (
+                          <label
+                            key={p.id}
+                            className={`flex items-center gap-3 px-4 py-2.5 cursor-pointer transition select-none ${
+                              isChecked
+                                ? "bg-blue-50/40 hover:bg-blue-50/60"
+                                : "hover:bg-gray-50"
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => togglePyqSelection(p.id)}
+                              className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-gray-300 cursor-pointer accent-blue-600"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <div
+                                className="text-xs font-semibold text-gray-900 truncate"
+                                title={p.title}
+                              >
+                                {p.title}
+                              </div>
+                              <div className="text-[10px] text-gray-400">
+                                {p.chunk_count} chunks •{" "}
+                                {p.is_user_uploaded ? "User Uploaded" : "Course Archive"}
+                              </div>
+                            </div>
+                            {isChecked && (
+                              <CheckCircle2 className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                            )}
+                          </label>
+                        )
+                      })
+                    ) : (
+                      <div className="p-4 text-center text-xs text-gray-500">
+                        No PYQ papers found for {subject}.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Preset Buttons */}
@@ -525,12 +706,19 @@ export default function Practice() {
             onClick={handleGenerate}
             disabled={!subject.trim() || !isMarksBalanced || loading}
             className={`w-full py-3.5 rounded-xl font-bold text-sm transition shadow-lg flex items-center justify-center gap-2 ${
-              !subject.trim() || !isMarksBalanced || loading
+              !subject.trim() || !isMarksBalanced
                 ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                : loading
+                ? "bg-blue-600/80 text-white cursor-wait"
                 : "bg-blue-600 hover:bg-blue-500 text-white shadow-blue-500/25 active:scale-[0.99]"
             }`}
           >
-            {isMarksBalanced ? (
+            {loading ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin text-white" />
+                <span>Launching...</span>
+              </>
+            ) : isMarksBalanced ? (
               <>
                 <Zap className="w-4 h-4 fill-white" />
                 <span>Launch Mock Exam ({targetTotal} Marks)</span>

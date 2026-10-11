@@ -287,10 +287,7 @@ export default function Dashboard() {
 
         {/* Main Workspace */}
         <div className="flex-1 p-8 overflow-y-auto">
-          {loading && <AILoader />}
-
-          {!loading && (
-            <div className="max-w-5xl mx-auto space-y-8">
+          <div className="max-w-5xl mx-auto space-y-8">
               {/* Top Banner */}
               <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white rounded-2xl p-8 shadow-xl relative overflow-hidden">
                 <div className="relative z-10">
@@ -675,14 +672,18 @@ export default function Dashboard() {
                         {/* Launch Exam Button with validation state */}
                         <button
                           onClick={generate}
-                          disabled={!subject.trim() || !isMarksBalanced}
+                          disabled={!subject.trim() || !isMarksBalanced || loading}
                           className={`w-full py-3.5 rounded-xl font-bold text-sm transition shadow-lg flex items-center justify-center gap-2 ${
                             !subject.trim() || !isMarksBalanced
                               ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                              : loading
+                              ? "bg-green-600/80 text-white cursor-wait"
                               : "bg-green-600 hover:bg-green-500 text-white shadow-green-600/20 active:scale-[0.99]"
                           }`}
                         >
-                          {isMarksBalanced ? (
+                          {loading ? (
+                            <span>Launching...</span>
+                          ) : isMarksBalanced ? (
                             <>
                               <span>⚡</span> Launch Mock Exam ({targetTotal} Marks)
                             </>
@@ -748,7 +749,7 @@ export default function Dashboard() {
                       </button>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-h-[560px] overflow-y-auto pr-1.5 custom-scrollbar">
                       {documents.map((doc) => (
                         <div
                           key={doc.id}
@@ -802,7 +803,6 @@ export default function Dashboard() {
                 </div>
               )}
             </div>
-          )}
         </div>
       </div>
     </div>

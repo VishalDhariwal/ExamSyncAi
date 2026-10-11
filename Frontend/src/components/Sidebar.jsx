@@ -45,11 +45,17 @@ export default function Sidebar() {
     >
       <div>
         {/* Sleek Brand Mark */}
-        <div className="px-4 py-4 border-b border-slate-800 flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white font-black text-sm shadow-md shadow-blue-500/25">
-            ⚡
+        <div className="px-4 py-4 border-b border-slate-800 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-white p-1 flex items-center justify-center shadow-md shadow-blue-500/20 flex-shrink-0">
+            <img
+              src="/logo.png"
+              alt="StudySync AI"
+              className="w-full h-full object-contain"
+            />
           </div>
-          <span className="font-bold text-white text-base tracking-tight">ExamSync</span>
+          <span className="font-extrabold text-white text-base tracking-tight">
+            StudySync <span className="text-blue-400">AI</span>
+          </span>
         </div>
 
         {/* Clean Nav Links without Subheadings */}

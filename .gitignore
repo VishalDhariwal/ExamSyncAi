@@ -18,7 +18,7 @@ env/
 .env
 .env.*
 *.env
-Backend/eval/
+
 Backend/test_security.py
 
 # ======================

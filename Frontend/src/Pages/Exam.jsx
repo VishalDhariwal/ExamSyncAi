@@ -4,7 +4,6 @@ import {
   Send,
   FileText,
   Bookmark,
-  Clock,
   Loader2,
   Trash2,
   CheckCircle2,
@@ -167,20 +166,14 @@ export default function Exam() {
             <button
               onClick={handleSaveAndExit}
               className="p-2 hover:bg-gray-100 text-gray-500 hover:text-gray-900 rounded-xl transition flex items-center gap-1.5 text-xs font-bold border border-gray-200"
-              title="Exit test and save as Pending"
+              title="Exit test"
             >
               <ArrowLeft className="w-4 h-4" />
-              <span className="hidden sm:inline">Exit (Save Pending)</span>
+              <span className="hidden sm:inline">Exit</span>
             </button>
 
             <div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold uppercase tracking-wider text-amber-700 bg-amber-50 px-2.5 py-0.5 rounded-md border border-amber-200/80 flex items-center gap-1">
-                  <Clock className="w-3 h-3 text-amber-600" />
-                  <span>Pending / In Progress</span>
-                </span>
-                <h1 className="text-lg font-bold text-gray-900">{exam.subject}</h1>
-              </div>
+              <h1 className="text-lg font-bold text-gray-900">{exam.subject}</h1>
               <p className="text-xs text-gray-500 mt-0.5">
                 Total: {totalMarks} Marks • Answered {answeredCount} of {totalQuestions} questions • Auto-Saved
               </p>

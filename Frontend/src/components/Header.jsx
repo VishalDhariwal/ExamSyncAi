@@ -19,7 +19,7 @@ export default function Header() {
       case "/results":
         return "Evaluation Results"
       default:
-        return "ExamSync AI"
+        return "StudySync AI"
     }
   }
 

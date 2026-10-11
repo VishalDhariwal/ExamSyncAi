@@ -31,6 +31,10 @@ export const discardExamApi = (examId) => API.delete(`/exams/${examId}`)
 // --- Course Structure & Subjects ---
 export const getStructure = () => API.get("/structure")
 export const getSubjects = () => API.get("/subjects")
+export const getSubjectMaterials = (subject) =>
+  API.get(`/subjects/${encodeURIComponent(subject)}/materials`)
+export const getSubjectWeakTopics = (subject) =>
+  API.get(`/subjects/${encodeURIComponent(subject)}/weak-topics`)
 
 // --- Document Management & Uploads ---
 export const uploadDocument = (formData) =>

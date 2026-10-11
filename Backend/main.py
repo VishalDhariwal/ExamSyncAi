@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
 from typing import List, Optional, cast
 from contextlib import asynccontextmanager
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 import uuid as uuid_pkg
 import jwt
@@ -46,7 +47,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app_api = FastAPI(title="ExamSync AI Backend", lifespan=lifespan)
+app_api = FastAPI(title="StudySync AI Backend", lifespan=lifespan)
 
 # -----------------------------
 # CORS
@@ -90,8 +91,10 @@ class ExamConfig(BaseModel):
 
 class ExamRequest(BaseModel):
     student_id: Optional[str] = None
-    semester: Optional[int] = None
     subject: str
+    selected_pyqs: Optional[List[str]] = None
+    selected_topics: Optional[List[str]] = None
+    semester: Optional[int] = None
     exam_config: Optional[ExamConfig] = None
 
 
@@ -463,7 +466,175 @@ def list_subjects(
     return all_subjects
 
 
-# -----------------------------
+@app_api.get("/subjects/{subject_name}/materials")
+def get_subject_materials(
+    subject_name: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Returns all notes and distinct past exam papers (PYQs) associated with this subject,
+    enabling students to review syllabus notes and multi-select PYQ papers.
+    """
+    subject_clean = subject_name.strip().upper()
+
+    # 1. User uploaded materials for this subject
+    user_docs = (
+        db.query(UserDocument)
+        .filter(
+            UserDocument.user_id == current_user.id,
+            UserDocument.subject == subject_clean,
+        )
+        .order_by(UserDocument.created_at.desc())
+        .all()
+    )
+
+    # 2. Public / system chunk sources for this subject
+    public_sources = (
+        db.query(DocumentChunk.doc_type, DocumentChunk.source, func.count(DocumentChunk.id))
+        .filter(
+            DocumentChunk.subject == subject_clean,
+            DocumentChunk.user_id.is_(None),
+        )
+        .group_by(DocumentChunk.doc_type, DocumentChunk.source)
+        .all()
+    )
+
+    notes_list = []
+    pyqs_list = []
+    seen_sources = set()
+
+    for d in user_docs:
+        item = {
+            "id": str(d.id),
+            "title": d.title or d.filename,
+            "filename": d.filename,
+            "doc_type": d.doc_type,
+            "chunk_count": d.chunk_count,
+            "is_user_uploaded": True,
+        }
+        seen_sources.add(d.filename.lower())
+        if d.doc_type == "PYQ":
+            pyqs_list.append(item)
+        else:
+            notes_list.append(item)
+
+    for dtype, src, count in public_sources:
+        src_clean = (src or "reference_document").strip()
+        if src_clean.lower() in seen_sources:
+            continue
+        seen_sources.add(src_clean.lower())
+
+        item = {
+            "id": src_clean,
+            "title": src_clean,
+            "filename": src_clean,
+            "doc_type": dtype.upper(),
+            "chunk_count": count,
+            "is_user_uploaded": False,
+        }
+        if dtype.upper() == "PYQ":
+            pyqs_list.append(item)
+        else:
+            notes_list.append(item)
+
+    return {
+        "subject": subject_clean,
+        "notes": notes_list,
+        "pyqs": pyqs_list,
+    }
+
+
+@app_api.get("/subjects/{subject_name}/weak-topics")
+def get_subject_weak_topics(
+    subject_name: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Returns all detected weak topics for the given subject based on the student's exam history,
+    plus syllabus focus topics from uploaded course notes.
+    """
+    sub_clean = subject_name.strip().upper()
+
+    # 1. Gather from user's completed exams for this subject
+    exams = (
+        db.query(ExamResult)
+        .filter(
+            ExamResult.user_id == current_user.id,
+            ExamResult.subject == sub_clean,
+            ExamResult.status == "COMPLETED",
+        )
+        .all()
+    )
+
+    topic_counts = {}
+    for exam in exams:
+        diag = exam.diagnostic or {}
+        weak_list = diag.get("weak_topics", [])
+        if isinstance(weak_list, list):
+            for t in weak_list:
+                t_str = str(t).strip()
+                if t_str:
+                    topic_counts[t_str] = topic_counts.get(t_str, 0) + 1
+
+        topic_analysis = diag.get("topic_analysis", [])
+        if isinstance(topic_analysis, list):
+            for item in topic_analysis:
+                if isinstance(item, dict) and item.get("status") == "Weak":
+                    t_str = str(item.get("topic", "")).strip()
+                    if t_str:
+                        topic_counts[t_str] = topic_counts.get(t_str, 0) + 1
+
+        grades = exam.grades or []
+        if isinstance(grades, list):
+            for g in grades:
+                if isinstance(g, dict):
+                    score = g.get("score", 0)
+                    max_m = g.get("max_marks", 1)
+                    topic = str(g.get("topic", "")).strip()
+                    if topic and max_m > 0 and (score / max_m) < 0.6:
+                        topic_counts[topic] = topic_counts.get(topic, 0) + 1
+
+    result = []
+    for topic, count in sorted(topic_counts.items(), key=lambda x: x[1], reverse=True):
+        result.append({
+            "topic": topic,
+            "count": count,
+            "status": "Weak",
+            "is_flagged": True,
+        })
+
+    # If no past exam weaknesses exist, provide syllabus topics from document chunks
+    if not result:
+        chunks = (
+            db.query(DocumentChunk.content)
+            .filter(
+                DocumentChunk.subject == sub_clean,
+                DocumentChunk.doc_type == "NOTES",
+            )
+            .limit(10)
+            .all()
+        )
+        syllabus_concepts = set()
+        for (chunk_content,) in chunks:
+            for line in chunk_content.splitlines():
+                line = line.strip("-* 0123456789.):")
+                if 8 <= len(line) <= 60 and not line.startswith("http"):
+                    syllabus_concepts.add(line)
+                if len(syllabus_concepts) >= 12:
+                    break
+        for sc in sorted(list(syllabus_concepts))[:12]:
+            result.append({
+                "topic": sc,
+                "count": 0,
+                "status": "Syllabus Topic",
+                "is_flagged": False,
+            })
+
+    return result
+
+
 # -----------------------------
 # Generate Exam Endpoint (Saves to PostgreSQL)
 # -----------------------------
@@ -496,8 +667,9 @@ def generate_exam(
 
     state_dict = {
         "student_id": str(current_user.id),
-        "semester": data.semester,
         "subject": data.subject.strip().upper(),
+        "selected_pyqs": data.selected_pyqs or [],
+        "selected_topics": data.selected_topics or [],
         "exam_config": config_dict,
         "messages": [],
         "image_bytes": None,
@@ -527,7 +699,7 @@ def generate_exam(
         id=exam_id,
         user_id=current_user.id,
         subject=data.subject.strip().upper(),
-        semester=data.semester,
+        semester=None,
         status="PENDING",
         exam_config=config_dict or {},
         exam_questions=exam_questions,
@@ -596,13 +768,42 @@ def list_pending_exams(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Returns all pending/in-progress exams for the authenticated student from PostgreSQL."""
+    """Returns all pending/in-progress exams for the authenticated student from PostgreSQL, deduplicating identical tests."""
     pending = (
         db.query(ExamResult)
         .filter(ExamResult.user_id == current_user.id, ExamResult.status == "PENDING")
-        .order_by(ExamResult.created_at.desc())
+        .order_by(ExamResult.updated_at.desc().nullslast(), ExamResult.created_at.desc())
         .all()
     )
+
+    seen_keys = set()
+    unique_pending = []
+    duplicates_to_delete = []
+
+    for e in pending:
+        first_q = ""
+        if e.exam_questions and len(e.exam_questions) > 0 and isinstance(e.exam_questions[0], dict):
+            first_q = str(e.exam_questions[0].get("question", ""))[:80]
+        
+        q_sig = (
+            e.subject,
+            len(e.exam_questions or []),
+            first_q,
+        )
+        if q_sig in seen_keys:
+            duplicates_to_delete.append(e)
+        else:
+            seen_keys.add(q_sig)
+            unique_pending.append(e)
+
+    if duplicates_to_delete:
+        for dup in duplicates_to_delete:
+            try:
+                db.delete(dup)
+            except Exception:
+                pass
+        db.commit()
+
     return [
         {
             "id": str(e.id),
@@ -617,7 +818,7 @@ def list_pending_exams(
             "created_at": e.created_at.isoformat() if e.created_at else None,
             "savedAt": e.updated_at.isoformat() if e.updated_at else (e.created_at.isoformat() if e.created_at else None),
         }
-        for e in pending
+        for e in unique_pending
     ]
 
 
