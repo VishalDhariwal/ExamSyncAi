@@ -19,6 +19,8 @@ env/
 .env.*
 *.env
 
+Backend/test_security.py
+
 # ======================
 # Firebase / Secrets (IMPORTANT)
 # ======================
@@ -29,6 +31,9 @@ Backend/firebase_key.json
 # Backend generated data
 # ======================
 Backend/chroma_db/
+Backend/uploads/
+Backend/Data/
+Data/
 *.sqlite3
 
 # ======================
@@ -66,3 +71,4 @@ Thumbs.db
 # Temporary files
 # ======================
 structure.txt
+issues.md
