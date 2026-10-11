@@ -11,6 +11,43 @@ import {
 } from "../api/api"
 import AILoader from "../components/AILoader"
 
+const PRESETS = {
+  standard_40: {
+    id: "standard_40",
+    name: "Standard University (40m)",
+    description: "5×2m, 4×3m, 2×4m, 2×5m (13 Qs)",
+    total_marks: 40,
+    breakdown: [
+      { type: "short", marks: 2, count: 5 },
+      { type: "short", marks: 3, count: 4 },
+      { type: "medium", marks: 4, count: 2 },
+      { type: "long", marks: 5, count: 2 },
+    ],
+  },
+  quiz_20: {
+    id: "quiz_20",
+    name: "MCQ & Short Quiz (20m)",
+    description: "10×1m MCQs + 5×2m Short Questions",
+    total_marks: 20,
+    breakdown: [
+      { type: "mcq", marks: 1, count: 10 },
+      { type: "short", marks: 2, count: 5 },
+    ],
+  },
+  comprehensive_50: {
+    id: "comprehensive_50",
+    name: "Comprehensive Mock (50m)",
+    description: "10×1m MCQs, 5×2m Short, 4×5m Medium, 1×10m Long",
+    total_marks: 50,
+    breakdown: [
+      { type: "mcq", marks: 1, count: 10 },
+      { type: "short", marks: 2, count: 5 },
+      { type: "medium", marks: 5, count: 4 },
+      { type: "long", marks: 10, count: 1 },
+    ],
+  },
+}
+
 export default function Dashboard() {
   const navigate = useNavigate()
 
@@ -26,6 +63,56 @@ export default function Dashboard() {
   const [uploadDocType, setUploadDocType] = useState("NOTES")
   const [uploading, setUploading] = useState(false)
   const [uploadStatus, setUploadStatus] = useState(null)
+
+  // Rubric / Exam Pattern State
+  const [selectedPreset, setSelectedPreset] = useState("standard_40")
+  const [customTotalMarks, setCustomTotalMarks] = useState(40)
+  const [breakdown, setBreakdown] = useState(PRESETS.standard_40.breakdown)
+  const [isCustomMode, setIsCustomMode] = useState(false)
+
+  // Calculated total marks from questions breakdown
+  const calculatedTotal = breakdown.reduce(
+    (sum, tier) => sum + (Number(tier.marks) || 0) * (Number(tier.count) || 0),
+    0
+  )
+  const targetTotal = Number(customTotalMarks) || 0
+  const isMarksBalanced = calculatedTotal === targetTotal && targetTotal > 0
+  const marksDifference = targetTotal - calculatedTotal
+
+  // Preset switch handler
+  const handleSelectPreset = (presetKey) => {
+    setSelectedPreset(presetKey)
+    if (presetKey === "custom") {
+      setIsCustomMode(true)
+    } else {
+      setIsCustomMode(false)
+      const p = PRESETS[presetKey]
+      setCustomTotalMarks(p.total_marks)
+      setBreakdown(p.breakdown.map((b) => ({ ...b })))
+    }
+  }
+
+  // Tier modifier handlers
+  const handleTierChange = (index, field, value) => {
+    setIsCustomMode(true)
+    setSelectedPreset("custom")
+    const updated = [...breakdown]
+    updated[index] = { ...updated[index], [field]: value }
+    setBreakdown(updated)
+  }
+
+  const handleAddTier = () => {
+    setIsCustomMode(true)
+    setSelectedPreset("custom")
+    setBreakdown([...breakdown, { type: "short", marks: 2, count: 1 }])
+  }
+
+  const handleRemoveTier = (index) => {
+    if (breakdown.length <= 1) return
+    setIsCustomMode(true)
+    setSelectedPreset("custom")
+    setBreakdown(breakdown.filter((_, i) => i !== index))
+  }
 
   const email = localStorage.getItem("user")
 
@@ -126,7 +213,7 @@ export default function Dashboard() {
     }
   }
 
-  // Generate Exam
+  // Generate Exam with Custom Rubric
   const generate = async () => {
     const targetSubject = subject.trim()
     if (!targetSubject) {
@@ -134,19 +221,39 @@ export default function Dashboard() {
       return
     }
 
+    if (!isMarksBalanced) {
+      alert(
+        `Rubric Mismatch: Configured marks (${calculatedTotal}) must exactly equal the total marks (${targetTotal}). Please balance your rubric before launching.`
+      )
+      return
+    }
+
     try {
       setLoading(true)
+
+      const examConfigPayload = {
+        total_marks: targetTotal,
+        breakdown: breakdown.map((t) => ({
+          type: t.type,
+          marks: Number(t.marks),
+          count: Number(t.count),
+        })),
+      }
 
       const res = await generateExam({
         student_id: email,
         subject: targetSubject,
+        exam_config: examConfigPayload,
       })
 
       localStorage.setItem("exam", JSON.stringify(res.data))
       navigate("/exam")
     } catch (err) {
       console.error("Generate exam failed:", err)
-      alert("Failed to generate exam. Please ensure you have uploaded notes or questions for this subject.")
+      const detail =
+        err.response?.data?.detail ||
+        "Failed to generate exam. Please check your notes and rubric."
+      alert(detail)
     } finally {
       setLoading(false)
     }
@@ -174,6 +281,8 @@ export default function Dashboard() {
           loading={loading}
           activeTab={activeTab}
           setActiveTab={setActiveTab}
+          isMarksBalanced={isMarksBalanced}
+          targetTotal={targetTotal}
         />
 
         {/* Main Workspace */}
@@ -193,7 +302,7 @@ export default function Dashboard() {
                   </h1>
                   <p className="text-blue-200/90 max-w-2xl text-sm leading-relaxed">
                     Upload your lecture slides, notes, or previous year question papers in PDF or text format.
-                    Our agentic RAG system embeds your materials into pgvector to generate syllabus-accurate university-grade mock exams.
+                    Configure your custom exam pattern (MCQs, short & long questions) and ensure exact mark balance!
                   </p>
 
                   <div className="mt-6 flex flex-wrap gap-4 items-center">
@@ -205,10 +314,14 @@ export default function Dashboard() {
                     </button>
                     <button
                       onClick={generate}
-                      disabled={!subject.trim()}
-                      className="bg-white/10 hover:bg-white/20 text-white border border-white/20 px-5 py-2.5 rounded-xl font-semibold text-sm transition backdrop-blur-sm flex items-center gap-2"
+                      disabled={!subject.trim() || !isMarksBalanced}
+                      className={`px-5 py-2.5 rounded-xl font-semibold text-sm transition backdrop-blur-sm flex items-center gap-2 ${
+                        !subject.trim() || !isMarksBalanced
+                          ? "bg-white/10 text-white/50 cursor-not-allowed border border-white/10"
+                          : "bg-white/15 hover:bg-white/25 text-white border border-white/30"
+                      }`}
                     >
-                      <span>⚡</span> Practice &quot;{subject || "Subject"}&quot;
+                      <span>⚡</span> Practice &quot;{subject || "Subject"}&quot; ({targetTotal}m)
                     </button>
                   </div>
                 </div>
@@ -220,11 +333,11 @@ export default function Dashboard() {
               {/* View 1: Upload Hub & Practice Launcher */}
               {activeTab === "hub" && (
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-                  {/* Upload Form (7 cols) */}
-                  <div className="lg:col-span-7 bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                  {/* Upload Form (6 cols) */}
+                  <div className="lg:col-span-6 bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
                     <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-100">
                       <div>
-                        <h2 className="text-lg font-bold text-gray-900">Upload New Study Material</h2>
+                        <h2 className="text-lg font-bold text-gray-900">Upload Study Material</h2>
                         <p className="text-xs text-gray-500">PDF, TXT, or MD documents up to 15 MB</p>
                       </div>
                       <span className="text-2xl">📑</span>
@@ -279,7 +392,7 @@ export default function Dashboard() {
                         />
                         {subjects.length > 0 && (
                           <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-gray-500">
-                            <span>Use existing:</span>
+                            <span>Existing:</span>
                             {subjects.map((sub) => (
                               <button
                                 key={sub}
@@ -357,18 +470,21 @@ export default function Dashboard() {
                     </form>
                   </div>
 
-                  {/* Practice Exam Quick Launch Card (5 cols) */}
-                  <div className="lg:col-span-5 space-y-6">
+                  {/* Exam Pattern & Rubric Configurator (6 cols) */}
+                  <div className="lg:col-span-6 space-y-6">
                     <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
                       <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-100">
                         <div>
-                          <h2 className="text-lg font-bold text-gray-900">Exam Configurator</h2>
-                          <p className="text-xs text-gray-500">AI-generated university standard mock</p>
+                          <h2 className="text-lg font-bold text-gray-900">Exam Rubric & Pattern</h2>
+                          <p className="text-xs text-gray-500">
+                            Configure total marks, MCQs, and question mark distribution
+                          </p>
                         </div>
                         <span className="text-2xl">🎯</span>
                       </div>
 
                       <div className="space-y-4">
+                        {/* Target Subject */}
                         <div>
                           <label className="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">
                             Target Subject / Class
@@ -382,36 +498,199 @@ export default function Dashboard() {
                           />
                         </div>
 
-                        <div className="bg-gray-50 rounded-xl p-4 border border-gray-100 space-y-2">
-                          <p className="text-xs font-bold text-gray-700 uppercase tracking-wider">
-                            Standard Exam Format: 40 Marks
-                          </p>
-                          <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
-                            <div className="bg-white p-2 rounded border border-gray-100">
-                              <span className="font-semibold text-blue-600">5 × 2 marks</span>: Definitions
-                            </div>
-                            <div className="bg-white p-2 rounded border border-gray-100">
-                              <span className="font-semibold text-blue-600">4 × 3 marks</span>: Short answers
-                            </div>
-                            <div className="bg-white p-2 rounded border border-gray-100">
-                              <span className="font-semibold text-blue-600">2 × 4 marks</span>: Explanations
-                            </div>
-                            <div className="bg-white p-2 rounded border border-gray-100">
-                              <span className="font-semibold text-blue-600">2 × 5 marks</span>: Long answers
-                            </div>
+                        {/* Preset Selection Tabs */}
+                        <div>
+                          <label className="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">
+                            Exam Format Preset
+                          </label>
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            {Object.values(PRESETS).map((p) => (
+                              <button
+                                key={p.id}
+                                type="button"
+                                onClick={() => handleSelectPreset(p.id)}
+                                className={`p-2.5 rounded-xl border text-left transition ${
+                                  selectedPreset === p.id && !isCustomMode
+                                    ? "border-blue-600 bg-blue-50/70 text-blue-900 font-bold shadow-sm"
+                                    : "border-gray-200 hover:border-gray-300 text-gray-700 bg-gray-50/50"
+                                }`}
+                              >
+                                <div className="font-semibold">{p.name}</div>
+                                <div className="text-[11px] text-gray-500 truncate">{p.description}</div>
+                              </button>
+                            ))}
+                            <button
+                              type="button"
+                              onClick={() => handleSelectPreset("custom")}
+                              className={`p-2.5 rounded-xl border text-left transition ${
+                                isCustomMode
+                                  ? "border-blue-600 bg-blue-50/70 text-blue-900 font-bold shadow-sm"
+                                  : "border-gray-200 hover:border-gray-300 text-gray-700 bg-gray-50/50"
+                              }`}
+                            >
+                              <div className="font-semibold">🛠️ Custom Rubric</div>
+                              <div className="text-[11px] text-gray-500">Build your own pattern</div>
+                            </button>
                           </div>
                         </div>
 
+                        {/* Custom Rubric Controls */}
+                        <div className="bg-gray-50/80 rounded-xl p-4 border border-gray-200/80 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <label className="text-xs font-bold text-gray-700 uppercase tracking-wider">
+                              Target Total Marks
+                            </label>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="number"
+                                min="1"
+                                max="200"
+                                value={customTotalMarks}
+                                onChange={(e) => {
+                                  setIsCustomMode(true)
+                                  setSelectedPreset("custom")
+                                  setCustomTotalMarks(Number(e.target.value) || 0)
+                                }}
+                                className="w-20 px-2.5 py-1 text-right text-sm font-bold bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              />
+                              <span className="text-xs font-semibold text-gray-600">Marks</span>
+                            </div>
+                          </div>
+
+                          {/* Question Breakdown Table */}
+                          <div className="space-y-2">
+                            <div className="text-xs font-semibold text-gray-500 flex justify-between px-1">
+                              <span>Question Tier</span>
+                              <span>Marks × Qty = Subtotal</span>
+                            </div>
+
+                            {breakdown.map((tier, idx) => (
+                              <div
+                                key={idx}
+                                className="flex items-center gap-2 bg-white p-2.5 rounded-lg border border-gray-200 text-xs shadow-2xs"
+                              >
+                                <select
+                                  value={tier.type === "mcq" ? "mcq" : `sub_${tier.marks}`}
+                                  onChange={(e) => {
+                                    const val = e.target.value
+                                    if (val === "mcq") {
+                                      handleTierChange(idx, "type", "mcq")
+                                      handleTierChange(idx, "marks", 1)
+                                    } else {
+                                      const m = Number(val.replace("sub_", "")) || tier.marks
+                                      handleTierChange(idx, "type", "subjective")
+                                      handleTierChange(idx, "marks", m)
+                                    }
+                                  }}
+                                  className="flex-1 bg-gray-50 border border-gray-200 rounded p-1 text-xs text-gray-800"
+                                >
+                                  <option value="mcq">MCQ (1 mark each)</option>
+                                  <option value="sub_2">Short (2 marks)</option>
+                                  <option value="sub_3">Short (3 marks)</option>
+                                  <option value="sub_4">Medium (4 marks)</option>
+                                  <option value="sub_5">Medium (5 marks)</option>
+                                  <option value="sub_10">Long (10 marks)</option>
+                                </select>
+
+                                <div className="flex items-center gap-1.5">
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    max="50"
+                                    value={tier.marks}
+                                    onChange={(e) =>
+                                      handleTierChange(idx, "marks", Number(e.target.value) || 1)
+                                    }
+                                    className="w-12 p-1 text-center bg-gray-50 border border-gray-200 rounded font-semibold"
+                                    title="Marks per question"
+                                  />
+                                  <span>m ×</span>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    max="50"
+                                    value={tier.count}
+                                    onChange={(e) =>
+                                      handleTierChange(idx, "count", Number(e.target.value) || 1)
+                                    }
+                                    className="w-12 p-1 text-center bg-gray-50 border border-gray-200 rounded font-semibold"
+                                    title="Question count"
+                                  />
+                                  <span>=</span>
+                                  <span className="w-10 font-bold text-gray-800 text-right">
+                                    {(Number(tier.marks) || 0) * (Number(tier.count) || 0)}m
+                                  </span>
+                                </div>
+
+                                {breakdown.length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveTier(idx)}
+                                    className="text-gray-400 hover:text-red-600 px-1 font-bold text-sm"
+                                    title="Remove tier"
+                                  >
+                                    ✕
+                                  </button>
+                                )}
+                              </div>
+                            ))}
+
+                            <button
+                              type="button"
+                              onClick={handleAddTier}
+                              className="w-full py-1.5 text-xs text-blue-600 hover:text-blue-700 font-semibold border border-dashed border-blue-300 hover:border-blue-400 bg-blue-50/40 rounded-lg transition"
+                            >
+                              + Add Question Tier
+                            </button>
+                          </div>
+
+                          {/* Live Total Invariant Status Bar */}
+                          <div className="pt-2 border-t border-gray-200">
+                            <div className="flex items-center justify-between text-xs mb-1">
+                              <span className="font-semibold text-gray-600">Calculated Sum:</span>
+                              <span className="font-extrabold text-gray-900">
+                                {calculatedTotal} / {targetTotal} Marks
+                              </span>
+                            </div>
+
+                            {isMarksBalanced ? (
+                              <div className="bg-green-100 text-green-800 border border-green-300 p-2 rounded-lg text-xs font-semibold flex items-center justify-between">
+                                <span>✅ Balanced: Questions match target total marks!</span>
+                                <span className="text-[10px] bg-green-200 px-2 py-0.5 rounded">Exact</span>
+                              </div>
+                            ) : marksDifference > 0 ? (
+                              <div className="bg-amber-100 text-amber-800 border border-amber-300 p-2 rounded-lg text-xs font-medium flex items-center justify-between">
+                                <span>⚠️ Need {marksDifference} more mark(s) to reach target</span>
+                                <span className="text-[10px] font-bold">-{marksDifference}m</span>
+                              </div>
+                            ) : (
+                              <div className="bg-red-100 text-red-800 border border-red-300 p-2 rounded-lg text-xs font-medium flex items-center justify-between">
+                                <span>⛔ Exceeds target by {Math.abs(marksDifference)} mark(s)</span>
+                                <span className="text-[10px] font-bold">+{Math.abs(marksDifference)}m</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Launch Exam Button with validation state */}
                         <button
                           onClick={generate}
-                          disabled={!subject.trim()}
+                          disabled={!subject.trim() || !isMarksBalanced}
                           className={`w-full py-3.5 rounded-xl font-bold text-sm transition shadow-lg flex items-center justify-center gap-2 ${
-                            !subject.trim()
+                            !subject.trim() || !isMarksBalanced
                               ? "bg-gray-300 text-gray-500 cursor-not-allowed"
                               : "bg-green-600 hover:bg-green-500 text-white shadow-green-600/20 active:scale-[0.99]"
                           }`}
                         >
-                          <span>⚡</span> Launch Mock Exam
+                          {isMarksBalanced ? (
+                            <>
+                              <span>⚡</span> Launch Mock Exam ({targetTotal} Marks)
+                            </>
+                          ) : (
+                            <>
+                              <span>🔒</span> Balance Rubric to Launch ({calculatedTotal}/{targetTotal}m)
+                            </>
+                          )}
                         </button>
                       </div>
                     </div>

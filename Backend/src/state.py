@@ -16,6 +16,7 @@ class ExamState(TypedDict):
     student_id: str
     semester: Optional[int]
     subject: str
+    exam_config: Optional[dict]
     
     # --- Communication (The Memory) ---
     # operator.add ensures we append to history rather than overwriting

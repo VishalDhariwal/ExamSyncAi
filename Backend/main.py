@@ -67,10 +67,22 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class QuestionTierConfig(BaseModel):
+    type: str  # "mcq" | "short" | "medium" | "long"
+    marks: int
+    count: int
+
+
+class ExamConfig(BaseModel):
+    total_marks: int
+    breakdown: List[QuestionTierConfig]
+
+
 class ExamRequest(BaseModel):
     student_id: Optional[str] = None
     semester: Optional[int] = None
     subject: str
+    exam_config: Optional[ExamConfig] = None
 
 
 class SubmitExam(BaseModel):
@@ -305,11 +317,32 @@ def list_subjects(
 # -----------------------------
 @app_api.post("/generate-exam")
 def generate_exam(data: ExamRequest):
-    """Generates an exam using PostgreSQL pgvector context and Groq LLM."""
+    """
+    Generates an exam using PostgreSQL pgvector context and Groq LLM.
+    Supports user-customized rubrics (total marks, MCQs, short/long breakdowns)
+    with strict mathematical total validation.
+    """
+    config_dict = None
+    if data.exam_config:
+        if data.exam_config.total_marks <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Total marks must be greater than 0.",
+            )
+
+        computed_total = sum(t.marks * t.count for t in data.exam_config.breakdown)
+        if computed_total != data.exam_config.total_marks:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Rubric validation failed: Sum of question marks ({computed_total}) does not equal total marks ({data.exam_config.total_marks}).",
+            )
+        config_dict = data.exam_config.model_dump()
+
     state_dict = {
         "student_id": data.student_id or "guest",
         "semester": data.semester,
         "subject": data.subject.strip().upper(),
+        "exam_config": config_dict,
         "messages": [],
         "image_bytes": None,
         "raw_transcription": None,

@@ -49,6 +49,41 @@ def grader_node(state: ExamState) -> Dict[str, Any]:
             continue
 
         # -----------------------------
+        # MCQ Fast Deterministic Evaluation
+        # -----------------------------
+        is_mcq = question.get("question_type") == "mcq" or bool(question.get("options"))
+        if is_mcq:
+            student_norm = student_ans.strip().lower()
+            ideal_norm = str(ideal_answer or "").strip().lower()
+
+            # Match option letter (e.g. "a" matches "a) option text") or full option text
+            is_correct = False
+            if student_norm == ideal_norm:
+                is_correct = True
+            elif len(student_norm) == 1 and ideal_norm.startswith(student_norm):
+                is_correct = True
+            elif len(ideal_norm) >= 2 and student_norm.startswith(ideal_norm[:2]):
+                is_correct = True
+            elif student_norm in ideal_norm or (len(student_norm) > 3 and ideal_norm in student_norm):
+                is_correct = True
+
+            mcq_score = max_marks if is_correct else 0
+            mcq_reason = (
+                f"Correct! Selected: {student_ans}"
+                if is_correct
+                else f"Incorrect. Selected: {student_ans}. Correct answer: {ideal_answer}"
+            )
+
+            grades.append({
+                "question_id": qid,
+                "score": mcq_score,
+                "max_marks": max_marks,
+                "justification": mcq_reason,
+                "topic": topic,
+            })
+            continue
+
+        # -----------------------------
         # Security: Telemetry & Input Isolation
         # -----------------------------
         from src.security import (

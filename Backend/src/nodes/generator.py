@@ -53,34 +53,84 @@ Return concise structured analysis.
 # -----------------------------------
 # Normalize Structure
 # -----------------------------------
-def normalize_structure(questions):
-    """Guarantees a strict 40-mark paper: 5x2m, 4x3m, 2x4m, 2x5m = 13 questions."""
-    required = {2: 5, 3: 4, 4: 2, 5: 2}
+def normalize_structure(questions, breakdown, subject="Core Subject"):
+    """
+    Guarantees that the exam strictly matches the requested rubric:
+    exact number of MCQs and subjective questions for every mark tier,
+    ensuring sum of marks exactly equals total_marks.
+    """
     final = []
 
-    by_marks = {2: [], 3: [], 4: [], 5: []}
-
+    # Segregate incoming questions by (is_mcq, marks)
+    pool = []
     for q in questions:
-        m = q.get("marks")
-        if m in by_marks:
-            by_marks[m].append(q)
+        q_is_mcq = (
+            q.get("question_type") == "mcq"
+            or bool(q.get("options"))
+            or q.get("marks") == 1
+        )
+        pool.append({
+            "question": q.get("question"),
+            "question_type": "mcq" if q_is_mcq else "subjective",
+            "options": q.get("options", []),
+            "marks": q.get("marks", 2),
+            "topic": q.get("topic", "Core Concepts"),
+            "ideal_answer": q.get("ideal_answer", ""),
+            "_used": False,
+        })
 
-    for marks, count in required.items():
-        selected = by_marks[marks][:count]
+    for tier in breakdown:
+        tier_type = tier.get("type", "subjective").lower()
+        tier_is_mcq = tier_type == "mcq" or tier.get("marks") == 1
+        tier_marks = tier.get("marks", 2)
+        tier_count = tier.get("count", 1)
 
-        # Fallback if missing
-        while len(selected) < count:
-            topic = questions[0].get("topic", "Core Concepts") if questions else "Core Concepts"
+        selected_for_tier = []
 
-            selected.append({
-                "question": f"Explain {topic} with an example.",
-                "marks": marks,
-                "topic": topic,
-                "ideal_answer": f"Detailed explanation of {topic} with technical terminology and examples."
-            })
+        # Find matching questions in pool
+        for item in pool:
+            if not item["_used"] and item["marks"] == tier_marks and item["question_type"] == ("mcq" if tier_is_mcq else "subjective"):
+                item["_used"] = True
+                selected_for_tier.append({
+                    "question": item["question"],
+                    "question_type": item["question_type"],
+                    "options": item["options"],
+                    "marks": tier_marks,
+                    "topic": item["topic"],
+                    "ideal_answer": item["ideal_answer"],
+                })
+                if len(selected_for_tier) == tier_count:
+                    break
 
-        final.extend(selected)
+        # Fallback if LLM generated fewer questions than requested
+        while len(selected_for_tier) < tier_count:
+            topic = questions[0].get("topic", subject) if questions else subject
+            if tier_is_mcq:
+                selected_for_tier.append({
+                    "question": f"Which of the following is correct regarding {topic}?",
+                    "question_type": "mcq",
+                    "options": [
+                        f"A) Primary mechanism of {topic}",
+                        f"B) Secondary feature of {topic}",
+                        f"C) Inverted process of {topic}",
+                        "D) None of the above",
+                    ],
+                    "marks": tier_marks,
+                    "topic": topic,
+                    "ideal_answer": f"A) Primary mechanism of {topic}",
+                })
+            else:
+                selected_for_tier.append({
+                    "question": f"Explain {topic} and discuss its importance in {subject}.",
+                    "question_type": "subjective",
+                    "marks": tier_marks,
+                    "topic": topic,
+                    "ideal_answer": f"Detailed technical explanation of {topic} with core concepts, diagrams/equations if applicable, and examples.",
+                })
 
+        final.extend(selected_for_tier)
+
+    # Re-number IDs sequentially
     for i, q in enumerate(final, 1):
         q["id"] = i
 
@@ -91,15 +141,31 @@ def normalize_structure(questions):
 # Generator Node
 # -----------------------------------
 def generator_node(state: ExamState) -> Dict[str, Any]:
-    """Generates syllabus-aligned exam using ChromaDB retrieval and reranked context."""
+    """Generates syllabus-aligned exam matching user-configured rubric."""
     if state.get("exam_questions"):
         return {}
 
     semester = state.get("semester")
     subject = state["subject"]
     student_id = state.get("student_id")
+    exam_config = state.get("exam_config")
 
-    # 1. Retrieve & Rerank via PostgreSQL pgvector (with automatic fallback to disk if needed)
+    # Default to 40-mark standard if not specified
+    if not exam_config or not exam_config.get("breakdown"):
+        exam_config = {
+            "total_marks": 40,
+            "breakdown": [
+                {"type": "short", "marks": 2, "count": 5},
+                {"type": "short", "marks": 3, "count": 4},
+                {"type": "medium", "marks": 4, "count": 2},
+                {"type": "long", "marks": 5, "count": 2},
+            ],
+        }
+
+    total_marks = exam_config["total_marks"]
+    breakdown = exam_config["breakdown"]
+
+    # 1. Retrieve & Rerank via PostgreSQL pgvector
     try:
         context_data = get_exam_context(
             subject=subject,
@@ -114,37 +180,64 @@ def generator_node(state: ExamState) -> Dict[str, Any]:
         pyq_text = ""
 
     # 2. Extract PYQ patterns from retrieved past questions (if available)
-    pyq_analysis = analyze_pyq(pyq_text) if pyq_text else "No prior PYQ documents uploaded. Derive balanced mock exam questions directly from the provided course notes."
+    pyq_analysis = (
+        analyze_pyq(pyq_text)
+        if pyq_text
+        else "No prior PYQ documents uploaded. Derive balanced mock exam questions directly from the provided course notes."
+    )
 
-    # 3. Generate exam using Groq LLM
+    # 3. Format Rubric Requirements
+    req_items = []
+    for b in breakdown:
+        b_type = b.get("type", "subjective").lower()
+        b_marks = b["marks"]
+        b_count = b["count"]
+        if b_type == "mcq" or b_marks == 1:
+            req_items.append(
+                f"- {b_count} Multiple Choice Question(s) of {b_marks} mark(s) each. MUST have 'question_type': 'mcq', 'options': ['A) ...', 'B) ...', 'C) ...', 'D) ...'], and 'ideal_answer': 'A) ...'"
+            )
+        else:
+            req_items.append(
+                f"- {b_count} subjective question(s) of {b_marks} marks each. 'question_type': 'subjective'"
+            )
+    requirements_text = "\n".join(req_items)
+    total_q_count = sum(b["count"] for b in breakdown)
+
+    # 4. Generate exam using Groq LLM
     parser = JsonOutputParser()
 
     prompt = ChatPromptTemplate.from_template("""
-You are an expert university examiner.
+You are an expert examiner creating an academic mock exam.
 
-Use:
-1) PYQ analysis (patterns, repeated topics):
+Source Materials:
+1) PYQ analysis:
 {pyq_analysis}
 
 2) Syllabus & Notes context retrieved from vector store:
 {context}
 
-Create a **40-mark exam** for {subject}.
+Target Subject: {subject}
+Total Marks: {total_marks}
+Total Questions Required: {total_q_count}
 
-STRICT REQUIREMENT:
-- 5 questions of 2 marks
-- 4 questions of 3 marks
-- 2 questions of 4 marks
-- 2 questions of 5 marks
+STRICT RUBRIC REQUIREMENTS:
+{requirements_text}
 
-Total questions = 13  
-Total marks = 40
-
-Return ONLY JSON array:
+Return ONLY a valid JSON array matching this format:
 [
   {{
     "id": 1,
-    "question": "...",
+    "question": "What is ...?",
+    "question_type": "mcq",
+    "options": ["A) ...", "B) ...", "C) ...", "D) ..."],
+    "marks": 1,
+    "topic": "...",
+    "ideal_answer": "A) ..."
+  }},
+  {{
+    "id": 2,
+    "question": "Explain ...",
+    "question_type": "subjective",
     "marks": 2,
     "topic": "...",
     "ideal_answer": "..."
@@ -152,10 +245,10 @@ Return ONLY JSON array:
 ]
 
 Rules:
-- Follow PYQ style and exam trends
-- Cover important syllabus topics
-- No markdown formatting around JSON
-- No extra commentary
+- Strictly adhere to the requested question counts and marks distribution.
+- For MCQs, provide 4 plausible options with the correct option in 'ideal_answer'.
+- For subjective questions, provide technical definitions and ideal answers.
+- Return ONLY the JSON array without Markdown code fences or extra text.
 """)
 
     chain = prompt | llm | parser
@@ -165,18 +258,22 @@ Rules:
             "pyq_analysis": pyq_analysis,
             "context": rag_context,
             "subject": subject,
+            "total_marks": total_marks,
+            "total_q_count": total_q_count,
+            "requirements_text": requirements_text,
         })
 
-        questions = normalize_structure(questions)
+        questions = normalize_structure(questions, breakdown, subject=subject)
 
     except Exception as e:
         print("Generation error:", e)
-        questions = []
+        questions = normalize_structure([], breakdown, subject=subject)
 
     return {
         "exam_questions": questions,
+        "exam_config": exam_config,
         "messages": [{
             "role": "system",
-            "content": "40-mark exam generated using ChromaDB RAG and PYQ analysis"
-        }]
+            "content": f"{total_marks}-mark exam generated based on custom rubric and RAG context",
+        }],
     }

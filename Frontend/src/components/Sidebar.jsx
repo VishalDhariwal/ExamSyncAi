@@ -10,6 +10,8 @@ export default function Sidebar({
   loading = false,
   activeTab = "hub",
   setActiveTab = () => {},
+  isMarksBalanced = true,
+  targetTotal = 40,
 }) {
   return (
     <motion.div
@@ -104,19 +106,26 @@ export default function Sidebar({
           )}
 
           <button
-            onClick={generate}
-            disabled={loading || !subject.trim()}
+            onClick={() => {
+              if (activeTab !== "hub") setActiveTab("hub")
+              generate()
+            }}
+            disabled={loading || !subject.trim() || !isMarksBalanced}
             className={`w-full py-3 rounded-lg font-semibold text-sm transition shadow-lg flex items-center justify-center gap-2 ${
-              loading || !subject.trim()
+              loading || !subject.trim() || !isMarksBalanced
                 ? "bg-gray-700 text-gray-400 cursor-not-allowed"
                 : "bg-blue-600 hover:bg-blue-500 text-white shadow-blue-500/20 active:scale-95"
             }`}
           >
             {loading ? (
               <span>Generating Exam...</span>
+            ) : isMarksBalanced ? (
+              <>
+                <span>⚡</span> Launch Exam ({targetTotal}m)
+              </>
             ) : (
               <>
-                <span>⚡</span> Generate Mock Exam
+                <span>🔒</span> Balance Rubric
               </>
             )}
           </button>
