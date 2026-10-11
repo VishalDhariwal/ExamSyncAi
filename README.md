@@ -4,7 +4,7 @@ ExamSync AI is an AI-powered platform that generates syllabus-aligned exams from
 
 The system helps students practice mock exams, receive instant grading feedback, and identify weak topics with strict tenant isolation and security protections.
 
-> 📊 **Empirically Benchmarked**: **100%** Retriever Recall@10 (15 test queries) • **100%** Generator Rubric Conformance (5 golden exams) • **100%** Grader Human-Range Agreement (8 professor benchmark cases).
+> 📊 **Empirically Benchmarked**: **100%** Retriever Recall@10 (15 test queries) • **100%** Generator Rubric Conformance (5 golden exams) • **87%** Grader Human-Range Agreement (8 professor benchmark cases).
 
 ---
 
