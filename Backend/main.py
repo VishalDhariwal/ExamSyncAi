@@ -569,20 +569,20 @@ def list_subjects(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Returns all unique classes/subjects from the student's uploaded study materials and core course tags."""
+    """Returns all unique classes/subjects from the student's uploaded study materials and exam attempts."""
     user_subjects = (
         db.query(UserDocument.subject)
         .filter(UserDocument.user_id == current_user.id)
         .distinct()
         .all()
     )
-    public_subjects = (
-        db.query(DocumentChunk.subject)
-        .filter(DocumentChunk.user_id.is_(None))
+    exam_subjects = (
+        db.query(ExamHistory.subject)
+        .filter(ExamHistory.user_id == current_user.id)
         .distinct()
         .all()
     )
-    combined = {s[0] for s in user_subjects if s[0]} | {s[0] for s in public_subjects if s[0]} | {"DSA", "DBMS"}
+    combined = {s[0] for s in user_subjects if s[0]} | {s[0] for s in exam_subjects if s[0]}
     all_subjects = sorted(list(combined))
     return all_subjects
 
