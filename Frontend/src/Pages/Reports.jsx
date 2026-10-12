@@ -38,6 +38,8 @@ import {
   resumePendingExam,
   removePendingExam,
   savePendingExam,
+  getTrueMaxScore,
+  getTrueScore,
 } from "../utils/examStorage"
 
 export default function Reports() {
@@ -113,8 +115,9 @@ export default function Reports() {
     totalExams > 0
       ? Math.round(
           exams.reduce((sum, e) => {
-            const max = e.max_score || 40
-            return sum + (e.score / max) * 100
+            const max = getTrueMaxScore(e)
+            const score = getTrueScore(e)
+            return sum + (score / max) * 100
           }, 0) / totalExams
         )
       : 0
@@ -517,8 +520,9 @@ export default function Reports() {
         <div className="space-y-4 max-h-[720px] overflow-y-auto pr-2 custom-scrollbar">
           {filteredExams.map((exam) => {
             const isExpanded = expandedExamId === exam.id
-            const maxScore = exam.max_score || 40
-            const percentage = Math.round((exam.score / maxScore) * 100)
+            const maxScore = getTrueMaxScore(exam)
+            const score = getTrueScore(exam)
+            const percentage = Math.round((score / maxScore) * 100)
 
             const scoreBadgeColor =
               percentage >= 75
@@ -558,7 +562,7 @@ export default function Reports() {
                       <div
                         className={`px-4 py-2 rounded-xl border font-black text-base ${scoreBadgeColor}`}
                       >
-                        {exam.score} / {maxScore}{" "}
+                        {score} / {maxScore}{" "}
                         <span className="text-xs font-semibold ml-1">({percentage}%)</span>
                       </div>
 
@@ -663,7 +667,12 @@ export default function Reports() {
                     </div>
 
                     <div className="space-y-3 max-h-[440px] overflow-y-auto pr-1.5 custom-scrollbar">
-                      {exam.grades.map((g, idx) => {
+                      {Object.values(
+                        (exam.grades || []).reduce((acc, g) => {
+                          acc[g.question_id] = g
+                          return acc
+                        }, {})
+                      ).map((g, idx) => {
                         const matchingQ = (exam.exam_questions || []).find(
                           (q) => String(q.id) === String(g.question_id)
                         )
@@ -753,9 +762,9 @@ export default function Reports() {
                       )}
                     </div>
                     <p className="text-xs text-gray-500 mt-0.5">
-                      Score: {activeDiagnosticExam.score} / {activeDiagnosticExam.max_score || 40} Marks (
+                      Score: {getTrueScore(activeDiagnosticExam)} / {getTrueMaxScore(activeDiagnosticExam)} Marks (
                       {Math.round(
-                        (activeDiagnosticExam.score / (activeDiagnosticExam.max_score || 40)) * 100
+                        (getTrueScore(activeDiagnosticExam) / getTrueMaxScore(activeDiagnosticExam)) * 100
                       )}
                       %) • Evaluated {activeDiagnosticExam.created_at ? new Date(activeDiagnosticExam.created_at).toLocaleDateString() : "Exam"}
                     </p>

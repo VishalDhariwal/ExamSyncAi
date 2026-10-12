@@ -217,6 +217,45 @@ def init_db():
             except Exception as e:
                 print(f"Migration note for '{sql}': {e}")
 
+    # Step 4: Repair any historical completed exam records with duplicated grades or inflated max_score
+    try:
+        with SessionLocal() as db:
+            records = db.query(ExamResult).filter(ExamResult.status == "COMPLETED").all()
+            repaired_count = 0
+            for r in records:
+                if not r.grades:
+                    continue
+                seen_qids = set()
+                deduped = []
+                has_duplicates = False
+                for g in reversed(r.grades):
+                    qid = g.get("question_id")
+                    if qid in seen_qids:
+                        has_duplicates = True
+                    else:
+                        seen_qids.add(qid)
+                        deduped.append(g)
+                deduped.reverse()
+
+                cfg_marks = (
+                    r.exam_config.get("total_marks")
+                    if isinstance(r.exam_config, dict)
+                    else None
+                )
+                q_marks = sum(q.get("marks", 0) for q in (r.exam_questions or []))
+                true_max = cfg_marks or q_marks or sum(g.get("max_marks", 0) for g in deduped)
+
+                if has_duplicates or (true_max and r.max_score > true_max):
+                    r.grades = deduped
+                    r.score = sum(g.get("score", 0) for g in deduped)
+                    r.max_score = true_max
+                    repaired_count += 1
+            if repaired_count > 0:
+                db.commit()
+                print(f"Repaired {repaired_count} historical exam records with duplicate grades/inflated max_score.")
+    except Exception as e:
+        print(f"Historical exam records repair note: {e}")
+
 
 def get_db() -> Generator[Session, None, None]:
     """Dependency for obtaining a transactional database session."""

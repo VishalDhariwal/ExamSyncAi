@@ -35,8 +35,8 @@ class ExamState(TypedDict):
     
     # --- Evaluation Logic ---
     current_rubric: Optional[str]
-    # We use Annotated[List, operator.add] so we don't lose previous grade versions
-    grades: Annotated[List[dict], operator.add] 
+    # Replaced on regrade rather than accumulated so duplicate questions are not created
+    grades: List[dict] 
     critic_notes: Optional[str]   # Feedback for the next iteration
     
     # --- Final Product Output ---

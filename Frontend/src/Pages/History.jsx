@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { getExamHistory } from "../api/api"
 import Header from "../components/Header"
 import { useNavigate } from "react-router-dom"
+import { getTrueMaxScore, getTrueScore } from "../utils/examStorage"
 
 export default function History() {
   const [tests, setTests] = useState([])
@@ -78,7 +79,7 @@ export default function History() {
                     )}
                   </div>
                   <div className="bg-blue-50 text-blue-700 px-4 py-2 rounded-lg font-bold text-lg">
-                    {test.score} / {test.max_score}
+                    {getTrueScore(test)} / {getTrueMaxScore(test)}
                   </div>
                 </div>
 

@@ -196,3 +196,52 @@ export async function resumePendingExam(examId, navigate) {
     }
   }
 }
+
+/**
+ * Accurately determines the total maximum marks of an exam, protecting
+ * against any historical data corruption or duplicate question entries.
+ */
+export function getTrueMaxScore(exam) {
+  if (!exam) return 40
+  if (exam.exam_config?.total_marks) return Number(exam.exam_config.total_marks)
+  if (exam.diagnostic?.max_score) return Number(exam.diagnostic.max_score)
+  if (exam.exam_questions?.length) {
+    const qSum = exam.exam_questions.reduce((sum, q) => sum + (Number(q.marks) || 0), 0)
+    if (qSum > 0) return qSum
+  }
+  if (exam.grades?.length) {
+    const seen = new Set()
+    let sum = 0
+    for (const g of exam.grades) {
+      if (!seen.has(g.question_id)) {
+        seen.add(g.question_id)
+        sum += Number(g.max_marks) || 0
+      }
+    }
+    if (sum > 0) return sum
+  }
+  return Number(exam.max_score) || 40
+}
+
+/**
+ * Accurately determines the student's score, deduplicating if grades were duplicated.
+ */
+export function getTrueScore(exam) {
+  if (!exam) return 0
+  if (exam.grades?.length) {
+    const seen = new Set()
+    let sum = 0
+    let hasDupes = false
+    for (const g of exam.grades) {
+      if (!seen.has(g.question_id)) {
+        seen.add(g.question_id)
+        sum += Number(g.score) || 0
+      } else {
+        hasDupes = true
+      }
+    }
+    if (hasDupes) return sum
+  }
+  return exam.score !== undefined && exam.score !== null ? Number(exam.score) : 0
+}
+

@@ -1026,13 +1026,35 @@ def submit_exam(
     """
     state = cast(ExamState, data.exam_state)
     state["student_answers"] = data.student_answers
+    # Reset grades and loop counter before invoking graph to prevent any duplicate/stale grade accumulation
+    state["grades"] = []
+    state["loop_count"] = 0
 
     # Run LangGraph evaluation (Grader -> Critic -> Diagnostic)
     result = graph_app.invoke(state)
 
-    grades = result.get("grades", [])
+    # Deduplicate grades by question_id (retaining the latest version for each question)
+    raw_grades = result.get("grades", [])
+    seen_qids = set()
+    deduped_grades = []
+    for g in reversed(raw_grades):
+        qid = g.get("question_id")
+        if qid not in seen_qids:
+            seen_qids.add(qid)
+            deduped_grades.append(g)
+    deduped_grades.reverse()
+    grades = deduped_grades
+
     total_score = sum(g.get("score", 0) for g in grades)
-    max_score = sum(g.get("max_marks", 0) for g in grades)
+
+    # Determine accurate max_score: prioritize configured rubric or questions
+    config_total = None
+    if isinstance(state.get("exam_config"), dict):
+        config_total = state["exam_config"].get("total_marks")
+    questions_total = sum(q.get("marks", 0) for q in state.get("exam_questions", []))
+    grades_total = sum(g.get("max_marks", 0) for g in grades)
+
+    max_score = config_total or questions_total or grades_total or 40.0
     diagnostic_report = result.get("diagnostic_report")
 
     answers_map = {ans["question_id"]: ans["answer_text"] for ans in data.student_answers}
