@@ -17,6 +17,7 @@ import {
 } from "lucide-react"
 import ScoreCard from "../components/ScoreCard"
 import { getExamSessionApi } from "../api/api"
+import { stopTrackingEvaluatingExam } from "../utils/examStorage"
 
 export default function Results() {
   const navigate = useNavigate()
@@ -27,34 +28,50 @@ export default function Results() {
   const [loading, setLoading] = useState(Boolean(examIdParam))
 
   useEffect(() => {
-    const loadResult = async () => {
-      if (examIdParam) {
-        try {
-          setLoading(true)
-          const res = await getExamSessionApi(examIdParam)
-          if (res.data) {
-            setData(res.data)
-            return
+    let isMounted = true
+    let pollTimer = null
+
+    const fetchSession = async (showLoadingSpinner = false) => {
+      if (!examIdParam) {
+        const raw = localStorage.getItem("result")
+        if (raw && isMounted) {
+          try {
+            setData(JSON.parse(raw))
+          } catch (e) {
+            console.error("Failed to parse local result:", e)
           }
-        } catch (err) {
-          console.error("Failed to load exam session from DB:", err)
-        } finally {
-          setLoading(false)
         }
+        return
       }
 
-      // Fallback to recent local result
-      const raw = localStorage.getItem("result")
-      if (raw) {
-        try {
-          setData(JSON.parse(raw))
-        } catch (e) {
-          console.error("Failed to parse local result:", e)
+      try {
+        if (showLoadingSpinner) setLoading(true)
+        const res = await getExamSessionApi(examIdParam)
+        if (!isMounted) return
+
+        if (res.data) {
+          setData(res.data)
+
+          // If still evaluating in background, poll every 2.5 seconds
+          if (res.data.status === "EVALUATING") {
+            pollTimer = setTimeout(() => fetchSession(false), 2500)
+          } else if (res.data.status === "COMPLETED") {
+            stopTrackingEvaluatingExam(examIdParam)
+          }
         }
+      } catch (err) {
+        console.error("Failed to load exam session from DB:", err)
+      } finally {
+        if (isMounted) setLoading(false)
       }
     }
 
-    loadResult()
+    fetchSession(true)
+
+    return () => {
+      isMounted = false
+      if (pollTimer) clearTimeout(pollTimer)
+    }
   }, [examIdParam])
 
   if (loading) {
@@ -64,6 +81,89 @@ export default function Results() {
         <p className="text-xs text-gray-500 font-medium">
           Retrieving evaluation report from PostgreSQL database...
         </p>
+      </div>
+    )
+  }
+
+  // --- Background Evaluation View ---
+  if (data?.status === "EVALUATING") {
+    return (
+      <div className="w-full max-w-2xl mx-auto py-10 px-4 space-y-6 animate-fadeIn">
+        <div className="bg-white rounded-3xl p-8 sm:p-10 border border-blue-100 shadow-xl shadow-blue-500/5 text-center relative overflow-hidden">
+          {/* Animated top progress accent */}
+          <div className="absolute top-0 left-0 right-0 h-1.5 bg-blue-100 overflow-hidden">
+            <div className="h-full bg-blue-600 rounded-full animate-pulse w-3/4"></div>
+          </div>
+
+          <div className="w-16 h-16 rounded-3xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto mb-5 shadow-sm border border-blue-100/80">
+            <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+          </div>
+
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-bold mb-3 border border-blue-100">
+            <Activity className="w-3.5 h-3.5 text-blue-600" />
+            <span>Grading In Progress (Background)</span>
+          </div>
+
+          <h2 className="text-2xl font-black text-gray-900 tracking-tight">
+            AI Examiner is Grading Your Exam
+          </h2>
+          <p className="text-sm font-semibold text-blue-600 mt-1 uppercase tracking-wide">
+            {data.subject}
+          </p>
+          <p className="text-xs text-gray-500 mt-2 max-w-md mx-auto leading-relaxed">
+            Your responses are being analyzed by our LangGraph examiner pipeline. MCQs are verified deterministically, and subjective answers are evaluated for conceptual depth and rigor.
+          </p>
+
+          {/* Real-time Status Card */}
+          <div className="mt-8 bg-gray-50/80 rounded-2xl p-5 border border-gray-100 text-left space-y-3">
+            <div className="flex items-center gap-3 text-xs font-semibold text-emerald-700">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+              <span>Answers safely saved to PostgreSQL</span>
+            </div>
+            <div className="flex items-center gap-3 text-xs font-semibold text-blue-700 animate-pulse">
+              <Loader2 className="w-4 h-4 text-blue-600 animate-spin flex-shrink-0" />
+              <span>LangGraph grading pipeline evaluating responses...</span>
+            </div>
+            <div className="flex items-center gap-3 text-xs font-medium text-gray-400">
+              <Sparkles className="w-4 h-4 text-gray-300 flex-shrink-0" />
+              <span>Synthesizing strengths, conceptual gaps & improvement tips</span>
+            </div>
+          </div>
+
+          {/* Safe-to-exit callout */}
+          <div className="mt-6 bg-amber-50/70 border border-amber-200/80 rounded-2xl p-4 text-left flex items-start gap-3">
+            <Lightbulb className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div className="text-xs text-amber-900 leading-relaxed">
+              <span className="font-bold block text-amber-950">You can safely leave this page!</span>
+              The evaluation continues in the background. Feel free to explore other pages—you will be alerted with a notification the instant your grades are ready.
+            </div>
+          </div>
+
+          {/* Action buttons */}
+          <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
+            <button
+              onClick={() => navigate("/dashboard")}
+              className="w-full sm:w-auto px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl shadow-md transition flex items-center justify-center gap-1.5"
+            >
+              <span>Go to Dashboard</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => navigate("/practice")}
+              className="w-full sm:w-auto px-5 py-2.5 border border-gray-200 hover:bg-gray-50 text-gray-700 font-bold text-xs rounded-xl transition flex items-center justify-center gap-1.5"
+            >
+              <Zap className="w-3.5 h-3.5 text-gray-500" />
+              <span>Practice Another Topic</span>
+            </button>
+            <button
+              onClick={() => navigate("/reports")}
+              className="w-full sm:w-auto px-5 py-2.5 border border-gray-200 hover:bg-gray-50 text-gray-700 font-bold text-xs rounded-xl transition flex items-center justify-center gap-1.5"
+            >
+              <BarChart3 className="w-3.5 h-3.5 text-gray-500" />
+              <span>View History</span>
+            </button>
+          </div>
+        </div>
       </div>
     )
   }

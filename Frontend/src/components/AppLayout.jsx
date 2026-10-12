@@ -1,6 +1,7 @@
 import { useEffect } from "react"
 import { Outlet, useNavigate } from "react-router-dom"
 import Navbar from "./Navbar"
+import EvaluationNotifier from "./EvaluationNotifier"
 
 export default function AppLayout() {
   const navigate = useNavigate()
@@ -13,9 +14,12 @@ export default function AppLayout() {
   }, [navigate])
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col w-full">
+    <div className="min-h-screen bg-gray-50 flex flex-col w-full relative">
       {/* Full-width Top Navbar */}
       <Navbar />
+
+      {/* Global Evaluation Notifier for background grading alerts */}
+      <EvaluationNotifier />
 
       {/* Spacious Full-Width Page Container without excessive margins */}
       <main className="flex-1 px-8 py-6 w-full max-w-[1440px] mx-auto">

@@ -1,11 +1,36 @@
+import { useState, useEffect } from "react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
-import { Zap, Home, BookOpen, BarChart3, LogOut } from "lucide-react"
+import { Zap, Home, BookOpen, BarChart3, LogOut, Loader2 } from "lucide-react"
+import { getEvaluatingExamsApi } from "../api/api"
 
 export default function Navbar() {
   const location = useLocation()
   const navigate = useNavigate()
   const email = localStorage.getItem("user") || "Student"
   const initial = email.charAt(0).toUpperCase()
+  const [evaluatingExams, setEvaluatingExams] = useState([])
+
+  useEffect(() => {
+    let isMounted = true
+    const checkActive = async () => {
+      try {
+        const res = await getEvaluatingExamsApi()
+        if (isMounted) {
+          setEvaluatingExams(res.data || [])
+        }
+      } catch (e) {
+        // Ignore network / auth errors
+      }
+    }
+    checkActive()
+    const interval = setInterval(checkActive, 4000)
+    window.addEventListener("evaluating-exams-updated", checkActive)
+    return () => {
+      isMounted = false
+      clearInterval(interval)
+      window.removeEventListener("evaluating-exams-updated", checkActive)
+    }
+  }, [])
 
   const navItems = [
     {
@@ -82,8 +107,19 @@ export default function Navbar() {
           })}
         </nav>
 
-        {/* Far Right: User Pill + Sign Out */}
+        {/* Far Right: Evaluating pill + User Pill + Sign Out */}
         <div className="flex items-center gap-3 flex-shrink-0 z-10">
+          {evaluatingExams.length > 0 && (
+            <Link
+              to={`/results?id=${evaluatingExams[0].id}`}
+              className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 text-xs font-bold animate-pulse hover:bg-blue-100 transition shadow-2xs"
+              title="Grading in background. Click to check real-time status."
+            >
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />
+              <span>Grading: {evaluatingExams[0].subject}</span>
+            </Link>
+          )}
+
           <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 px-3 py-1.5 rounded-full">
             <div className="w-5 h-5 rounded-full bg-blue-600 text-white font-bold text-[11px] flex items-center justify-center">
               {initial}

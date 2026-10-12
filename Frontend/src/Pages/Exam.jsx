@@ -15,6 +15,8 @@ import {
   savePendingExam,
   removePendingExam,
   clearLocalPendingExam,
+  trackEvaluatingExam,
+  requestBrowserNotificationPermission,
 } from "../utils/examStorage"
 
 export default function Exam() {
@@ -107,18 +109,28 @@ export default function Exam() {
         answer_text: answers[q.id] || "",
       }))
 
+      // Request browser notification permission so we can alert student when evaluation finishes
+      requestBrowserNotificationPermission()
+
       const res = await submitExam({
         exam_state: exam,
         student_answers,
         user_email: email,
       })
 
-      // Clean up ONLY local pending cache once successfully submitted & evaluated
+      const completedExamId = res.data?.id || exam?.id
+
+      // Clean up local pending draft and active test session
       if (exam?.id) {
         clearLocalPendingExam(exam.id)
       }
+      localStorage.removeItem("exam")
 
-      const completedExamId = res.data?.id || exam?.id
+      // Track background evaluation so user gets notified on any page
+      if (completedExamId) {
+        trackEvaluatingExam(completedExamId, exam.subject || "Exam")
+      }
+
       localStorage.setItem("result", JSON.stringify(res.data))
       navigate(completedExamId ? `/results?id=${completedExamId}` : "/results")
     } catch (err) {

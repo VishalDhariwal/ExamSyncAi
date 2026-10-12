@@ -23,6 +23,7 @@ export const getMe = () => API.get("/auth/me")
 // --- Exam Workflows (PostgreSQL Persisted) ---
 export const generateExam = (data) => API.post("/generate-exam", data)
 export const submitExam = (data) => API.post("/submit-exam", data)
+export const getEvaluatingExamsApi = () => API.get("/exams/evaluating")
 export const getExamHistory = () => API.get("/exam-history")
 export const getPendingExamsApi = () => API.get("/exams/pending")
 export const saveDraftExamApi = (examId, savedAnswers) =>
