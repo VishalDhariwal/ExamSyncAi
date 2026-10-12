@@ -256,6 +256,62 @@ def init_db():
     except Exception as e:
         print(f"Historical exam records repair note: {e}")
 
+    # Step 5: Stuck-exam recovery check (recovers exams interrupted by server restarts or crashes during background evaluation)
+    try:
+        with SessionLocal() as db:
+            stuck_records = db.query(ExamResult).filter(ExamResult.status == "EVALUATING").all()
+            if stuck_records:
+                print(f"⚠️ [Startup Recovery] Found {len(stuck_records)} exam(s) in EVALUATING state from previous server session. Recovering...")
+                recovered_count = 0
+                for r in stuck_records:
+                    ans_map = r.saved_answers or {}
+                    q_list = r.exam_questions or []
+                    fb_grades = []
+                    for q in q_list:
+                        qid = q.get("id")
+                        sans = str(ans_map.get(str(qid), ans_map.get(qid, ""))).strip().lower()
+                        ideal = str(q.get("ideal_answer", "")).strip().lower()
+                        m = float(q.get("marks", 0))
+                        is_correct = bool(sans and ideal and (sans == ideal or sans in ideal))
+                        fb_grades.append({
+                            "question_id": qid,
+                            "score": m if is_correct else 0.0,
+                            "max_marks": m,
+                            "justification": "Graded via system startup recovery evaluator after server restart.",
+                            "topic": q.get("topic") or "General",
+                        })
+                    fb_score = sum(g["score"] for g in fb_grades)
+                    cfg_total = (
+                        r.exam_config.get("total_marks")
+                        if isinstance(r.exam_config, dict)
+                        else None
+                    )
+                    q_total = sum(q.get("marks", 0) for q in q_list)
+                    fb_max = cfg_total or q_total or sum(g["max_marks"] for g in fb_grades) or 40.0
+
+                    r.status = "COMPLETED"
+                    r.score = fb_score
+                    r.max_score = fb_max
+                    r.grades = fb_grades
+                    r.diagnostic = {
+                        "overall_feedback": f"Your exam was automatically recovered and finalized after a server reload. Score: {fb_score}/{fb_max} Marks.",
+                        "performance_band": "Completed",
+                        "summary_badge": "Recovered",
+                        "total_score": fb_score,
+                        "max_score": fb_max,
+                        "strong_topics": [],
+                        "weak_topics": [],
+                        "improvement_tips": ["Review test concepts and continue practicing with mock exams."]
+                    }
+                    r.updated_at = datetime.now(timezone.utc)
+                    recovered_count += 1
+                if recovered_count > 0:
+                    db.commit()
+                    print(f"✅ [Startup Recovery] Successfully recovered and finalized {recovered_count} stuck exam(s).")
+    except Exception as e:
+        print(f"Stuck exam recovery note: {e}")
+
+
 
 def get_db() -> Generator[Session, None, None]:
     """Dependency for obtaining a transactional database session."""

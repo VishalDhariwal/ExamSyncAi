@@ -53,4 +53,15 @@ export const getDocumentPdfUrl = (id) => {
   return `${BASE_URL}/documents/${id}/view?token=${encodeURIComponent(token || "")}`
 }
 
+// --- Server-Sent Events (SSE) Stream URL Helpers ---
+export const getExamStreamUrl = (examId) => {
+  const token = localStorage.getItem("token")
+  return `${BASE_URL}/exams/${examId}/stream?token=${encodeURIComponent(token || "")}`
+}
+
+export const getEvaluatingExamsStreamUrl = () => {
+  const token = localStorage.getItem("token")
+  return `${BASE_URL}/exams/evaluating/stream?token=${encodeURIComponent(token || "")}`
+}
+
 export default API

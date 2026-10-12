@@ -8,7 +8,11 @@ import {
   Zap,
   Award,
 } from "lucide-react"
-import { getEvaluatingExamsApi, getExamSessionApi } from "../api/api"
+import {
+  getEvaluatingExamsApi,
+  getExamSessionApi,
+  getEvaluatingExamsStreamUrl,
+} from "../api/api"
 import {
   stopTrackingEvaluatingExam,
   sendBrowserNotification,
@@ -27,6 +31,36 @@ export default function EvaluationNotifier() {
     if (!token) return
 
     let isMounted = true
+    let eventSource = null
+    let pollInterval = null
+
+    const handleExamCompleted = (exam) => {
+      if (!exam || !exam.id) return
+      stopTrackingEvaluatingExam(exam.id)
+
+      const score = getTrueScore(exam)
+      const max = getTrueMaxScore(exam)
+      const pct = max > 0 ? Math.round((score / max) * 100) : 0
+
+      // Desktop Web Notification
+      sendBrowserNotification(`StudySync AI: ${exam.subject} Exam Evaluated!`, {
+        body: `Your exam has been graded. Score: ${score}/${max} Marks (${pct}%). Click to view diagnostic report.`,
+      })
+
+      // In-App Toast Notification
+      setNotifications((prev) => [
+        ...prev.filter((n) => n.id !== exam.id),
+        {
+          id: exam.id,
+          subject: exam.subject,
+          score,
+          max,
+          percentage: pct,
+          badge: exam.diagnostic?.summary_badge || "Evaluated",
+          createdAt: Date.now(),
+        },
+      ])
+    }
 
     const checkEvaluations = async () => {
       try {
@@ -36,7 +70,6 @@ export default function EvaluationNotifier() {
         const currentIds = new Set(currentEvaluating.map((e) => e.id))
 
         if (!hasInitializedRef.current) {
-          // Initial load: populate current active IDs without firing completion alerts
           activeIdsRef.current = currentIds
           hasInitializedRef.current = true
           return
@@ -45,35 +78,11 @@ export default function EvaluationNotifier() {
         // Detect any exams that were evaluating previously but are no longer in evaluating status
         for (const prevId of activeIdsRef.current) {
           if (!currentIds.has(prevId)) {
-            // This exam has completed its evaluation!
             try {
               const completedRes = await getExamSessionApi(prevId)
               const exam = completedRes.data
               if (exam && exam.status === "COMPLETED") {
-                stopTrackingEvaluatingExam(prevId)
-
-                const score = getTrueScore(exam)
-                const max = getTrueMaxScore(exam)
-                const pct = max > 0 ? Math.round((score / max) * 100) : 0
-
-                // Desktop Web Notification
-                sendBrowserNotification(`StudySync AI: ${exam.subject} Exam Evaluated!`, {
-                  body: `Your exam has been graded. Score: ${score}/${max} Marks (${pct}%). Click to view diagnostic report.`,
-                })
-
-                // In-App Toast Notification
-                setNotifications((prev) => [
-                  ...prev.filter((n) => n.id !== exam.id),
-                  {
-                    id: exam.id,
-                    subject: exam.subject,
-                    score,
-                    max,
-                    percentage: pct,
-                    badge: exam.diagnostic?.summary_badge || "Evaluated",
-                    createdAt: Date.now(),
-                  },
-                ])
+                handleExamCompleted(exam)
               }
             } catch (err) {
               console.warn("Could not fetch completed exam session:", err)
@@ -87,15 +96,70 @@ export default function EvaluationNotifier() {
       }
     }
 
-    // Initial check
-    checkEvaluations()
+    const startPolling = () => {
+      if (pollInterval) return
+      checkEvaluations()
+      pollInterval = setInterval(checkEvaluations, 4000)
+    }
 
-    // Poll every 3.5 seconds
-    const interval = setInterval(checkEvaluations, 3500)
+    // Connect Server-Sent Events (SSE) push stream for instant notification delivery
+    const initSSE = () => {
+      if (typeof EventSource === "undefined") {
+        startPolling()
+        return
+      }
+
+      try {
+        const streamUrl = getEvaluatingExamsStreamUrl()
+        eventSource = new EventSource(streamUrl)
+
+        eventSource.addEventListener("snapshot", (e) => {
+          try {
+            const data = JSON.parse(e.data)
+            activeIdsRef.current = new Set(data.evaluating_ids || [])
+          } catch (err) {
+            console.warn("Failed to parse SSE snapshot:", err)
+          }
+        })
+
+        eventSource.addEventListener("completed", (e) => {
+          if (!isMounted) return
+          try {
+            const completedExam = JSON.parse(e.data)
+            handleExamCompleted(completedExam)
+          } catch (err) {
+            console.error("Failed to parse SSE completion:", err)
+          }
+        })
+
+        eventSource.addEventListener("error", () => {
+          // Fall back gracefully to polling on network or proxy interruption
+          if (eventSource) {
+            eventSource.close()
+            eventSource = null
+          }
+          if (isMounted && !pollInterval) {
+            startPolling()
+          }
+        })
+      } catch (err) {
+        startPolling()
+      }
+    }
+
+    // Initialize SSE streaming push with polling backup
+    initSSE()
 
     return () => {
       isMounted = false
-      clearInterval(interval)
+      if (eventSource) {
+        eventSource.close()
+        eventSource = null
+      }
+      if (pollInterval) {
+        clearInterval(pollInterval)
+        pollInterval = null
+      }
     }
   }, [])
 

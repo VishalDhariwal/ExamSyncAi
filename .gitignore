@@ -19,7 +19,6 @@ env/
 .env.*
 *.env
 
-Backend/test_security.py
 
 # ======================
 # Firebase / Secrets (IMPORTANT)

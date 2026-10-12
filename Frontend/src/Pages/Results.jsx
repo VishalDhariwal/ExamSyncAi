@@ -16,7 +16,7 @@ import {
   ShieldAlert,
 } from "lucide-react"
 import ScoreCard from "../components/ScoreCard"
-import { getExamSessionApi } from "../api/api"
+import { getExamSessionApi, getExamStreamUrl } from "../api/api"
 import { stopTrackingEvaluatingExam } from "../utils/examStorage"
 
 export default function Results() {
@@ -30,6 +30,46 @@ export default function Results() {
   useEffect(() => {
     let isMounted = true
     let pollTimer = null
+    let eventSource = null
+
+    const cleanupSSE = () => {
+      if (eventSource) {
+        eventSource.close()
+        eventSource = null
+      }
+    }
+
+    const startSSE = () => {
+      if (eventSource || typeof EventSource === "undefined") return
+
+      try {
+        const streamUrl = getExamStreamUrl(examIdParam)
+        eventSource = new EventSource(streamUrl)
+
+        eventSource.addEventListener("completed", (event) => {
+          if (!isMounted) return
+          try {
+            const completedData = JSON.parse(event.data)
+            setData(completedData)
+            stopTrackingEvaluatingExam(examIdParam)
+            cleanupSSE()
+            if (pollTimer) clearTimeout(pollTimer)
+          } catch (e) {
+            console.error("Failed to parse SSE completion:", e)
+          }
+        })
+
+        eventSource.addEventListener("error", () => {
+          // In case of SSE interruption, close and fall back to polling
+          cleanupSSE()
+          if (isMounted && !pollTimer) {
+            pollTimer = setTimeout(() => fetchSession(false), 2500)
+          }
+        })
+      } catch (e) {
+        console.warn("EventSource initialization note:", e)
+      }
+    }
 
     const fetchSession = async (showLoadingSpinner = false) => {
       if (!examIdParam) {
@@ -52,11 +92,13 @@ export default function Results() {
         if (res.data) {
           setData(res.data)
 
-          // If still evaluating in background, poll every 2.5 seconds
+          // If still evaluating in background, connect SSE push stream
           if (res.data.status === "EVALUATING") {
-            pollTimer = setTimeout(() => fetchSession(false), 2500)
+            startSSE()
+            pollTimer = setTimeout(() => fetchSession(false), 3000)
           } else if (res.data.status === "COMPLETED") {
             stopTrackingEvaluatingExam(examIdParam)
+            cleanupSSE()
           }
         }
       } catch (err) {
@@ -71,6 +113,7 @@ export default function Results() {
     return () => {
       isMounted = false
       if (pollTimer) clearTimeout(pollTimer)
+      cleanupSSE()
     }
   }, [examIdParam])
 
