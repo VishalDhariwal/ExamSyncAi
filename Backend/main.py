@@ -23,6 +23,10 @@ from sqlalchemy.orm import Session
 import uuid as uuid_pkg
 import jwt
 import threading
+import gc
+import asyncio
+import json
+from concurrent.futures import ThreadPoolExecutor
 
 from src.database import (
     init_db,
@@ -47,11 +51,18 @@ from src.state import ExamState
 from src.nodes.ingest import ingest_user_document
 
 
+# Fixed concurrency pool: caps simultaneous background grading workers to 3
+# strictly prevents PostgreSQL pool exhaustion and Groq rate limit exhaustion
+GRADER_POOL = ThreadPoolExecutor(max_workers=3, thread_name_prefix="ai_grader_")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Initialize PostgreSQL tables and pgvector extension
+    # Initialize PostgreSQL tables and pgvector extension, and recover any stuck exams
     init_db()
     yield
+    # Graceful shutdown of worker pool
+    GRADER_POOL.shutdown(wait=False)
 
 
 app_api = FastAPI(title="StudySync AI Backend", lifespan=lifespan)
@@ -975,6 +986,205 @@ def get_evaluating_exams(
     ]
 
 
+def format_exam_response(exam: ExamResult) -> dict:
+    """Standardizes exam result serialization across REST and SSE push streams."""
+    return {
+        "id": str(exam.id),
+        "subject": exam.subject,
+        "semester": exam.semester,
+        "status": exam.status,
+        "exam_config": exam.exam_config,
+        "exam_questions": exam.exam_questions,
+        "saved_answers": exam.saved_answers or {},
+        "answeredCount": len([v for v in (exam.saved_answers or {}).values() if str(v).strip()]),
+        "totalQuestions": len(exam.exam_questions or []),
+        "score": exam.score,
+        "max_score": exam.max_score,
+        "grades": exam.grades,
+        "diagnostic": exam.diagnostic,
+        "created_at": exam.created_at.isoformat() if exam.created_at else None,
+        "savedAt": exam.updated_at.isoformat() if exam.updated_at else None,
+    }
+
+
+def authenticate_stream_user(
+    request: Request,
+    token: Optional[str] = None,
+    db: Session = None,
+) -> User:
+    """
+    Authenticates user for SSE streaming endpoints.
+    Accepts JWT token in Authorization: Bearer header or ?token= query parameter
+    (required for standard browser EventSource).
+    """
+    auth_header = request.headers.get("authorization")
+    raw_token = None
+    if auth_header and auth_header.startswith("Bearer "):
+        raw_token = auth_header.split(" ")[1]
+    elif token:
+        raw_token = token
+
+    if not raw_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication token required.",
+        )
+
+    try:
+        payload = jwt.decode(raw_token, JWT_SECRET_KEY, algorithms=[ALGORITHM])
+        user_id_str = payload.get("sub")
+        if not user_id_str:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token.")
+        user_uuid = uuid_pkg.UUID(user_id_str)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired authentication token.",
+        )
+
+    user = db.query(User).filter(User.id == user_uuid).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found.")
+    return user
+
+
+@app_api.get("/exams/{exam_id}/stream")
+async def stream_exam_status(
+    exam_id: str,
+    request: Request,
+    token: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """
+    Server-Sent Events (SSE) push stream for live grading status of a specific exam.
+    Pushes completed evaluation results as soon as grading finishes, eliminating HTTP polling.
+    Accepts Bearer auth header or ?token= query parameter for browser EventSource.
+    """
+    current_user = authenticate_stream_user(request, token, db)
+    try:
+        e_uuid = uuid_pkg.UUID(exam_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid exam ID format.")
+
+    async def event_generator():
+        try:
+            # Stream timeout safety: max 120 ticks * 1.5s = 180 seconds
+            for tick in range(120):
+                if await request.is_disconnected():
+                    break
+
+                with SessionLocal() as check_db:
+                    exam = (
+                        check_db.query(ExamResult)
+                        .filter(ExamResult.id == e_uuid, ExamResult.user_id == current_user.id)
+                        .first()
+                    )
+                    if not exam:
+                        yield f"event: error\ndata: {json.dumps({'error': 'Exam not found'})}\n\n"
+                        break
+
+                    if exam.status == "COMPLETED":
+                        payload = format_exam_response(exam)
+                        yield f"event: completed\ndata: {json.dumps(payload)}\n\n"
+                        break
+                    elif exam.status == "DISCARDED":
+                        yield f"event: discarded\ndata: {json.dumps({'status': 'DISCARDED'})}\n\n"
+                        break
+                    else:
+                        yield f"event: progress\ndata: {json.dumps({'status': 'EVALUATING', 'tick': tick})}\n\n"
+
+                await asyncio.sleep(1.5)
+            else:
+                yield f"event: timeout\ndata: {json.dumps({'status': 'TIMEOUT', 'message': 'Evaluation stream timeout.'})}\n\n"
+        except Exception as ex:
+            yield f"event: error\ndata: {json.dumps({'error': str(ex)})}\n\n"
+
+    headers = {
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
+    }
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers=headers,
+    )
+
+
+@app_api.get("/exams/evaluating/stream")
+async def stream_evaluating_exams(
+    request: Request,
+    token: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """
+    Server-Sent Events (SSE) push stream for student's background evaluations.
+    Emits 'completed' events with full exam data as soon as background evaluation completes,
+    enabling global desktop push and in-app alerts without client HTTP polling loops.
+    """
+    current_user = authenticate_stream_user(request, token, db)
+
+    async def event_generator():
+        try:
+            known_evaluating_ids = set()
+            with SessionLocal() as check_db:
+                initial_evals = (
+                    check_db.query(ExamResult.id)
+                    .filter(ExamResult.user_id == current_user.id, ExamResult.status == "EVALUATING")
+                    .all()
+                )
+                known_evaluating_ids = {str(r[0]) for r in initial_evals}
+
+            yield f"event: snapshot\ndata: {json.dumps({'evaluating_ids': list(known_evaluating_ids)})}\n\n"
+
+            # Max duration: 180 ticks * 2.0s = 360 seconds (browser EventSource auto-reconnects)
+            for tick in range(180):
+                if await request.is_disconnected():
+                    break
+
+                with SessionLocal() as check_db:
+                    current_evals = (
+                        check_db.query(ExamResult.id)
+                        .filter(ExamResult.user_id == current_user.id, ExamResult.status == "EVALUATING")
+                        .all()
+                    )
+                    current_ids = {str(r[0]) for r in current_evals}
+
+                    # Detect any exams that transitioned from EVALUATING to COMPLETED
+                    completed_ids = known_evaluating_ids - current_ids
+                    for c_id in completed_ids:
+                        try:
+                            c_uuid = uuid_pkg.UUID(c_id)
+                            c_exam = (
+                                check_db.query(ExamResult)
+                                .filter(ExamResult.id == c_uuid, ExamResult.user_id == current_user.id)
+                                .first()
+                            )
+                            if c_exam and c_exam.status == "COMPLETED":
+                                payload = format_exam_response(c_exam)
+                                yield f"event: completed\ndata: {json.dumps(payload)}\n\n"
+                        except Exception:
+                            pass
+
+                    known_evaluating_ids = current_ids
+                    yield f": keepalive {tick}\n\n"
+
+                await asyncio.sleep(2.0)
+        except Exception as ex:
+            yield f"event: error\ndata: {json.dumps({'error': str(ex)})}\n\n"
+
+    headers = {
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
+    }
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers=headers,
+    )
+
+
 @app_api.get("/exams/{exam_id}")
 def get_exam_session(
     exam_id: str,
@@ -995,23 +1205,7 @@ def get_exam_session(
     if not exam:
         raise HTTPException(status_code=404, detail="Exam not found.")
 
-    return {
-        "id": str(exam.id),
-        "subject": exam.subject,
-        "semester": exam.semester,
-        "status": exam.status,
-        "exam_config": exam.exam_config,
-        "exam_questions": exam.exam_questions,
-        "saved_answers": exam.saved_answers or {},
-        "answeredCount": len([v for v in (exam.saved_answers or {}).values() if str(v).strip()]),
-        "totalQuestions": len(exam.exam_questions or []),
-        "score": exam.score,
-        "max_score": exam.max_score,
-        "grades": exam.grades,
-        "diagnostic": exam.diagnostic,
-        "created_at": exam.created_at.isoformat() if exam.created_at else None,
-        "savedAt": exam.updated_at.isoformat() if exam.updated_at else None,
-    }
+    return format_exam_response(exam)
 
 
 @app_api.delete("/exams/{exam_id}")
@@ -1165,6 +1359,12 @@ def grade_exam_in_background(
             print(f"Failed to apply fallback grade: {inner_e}")
     finally:
         db.close()
+        # Explicit garbage collection to release LangGraph state & embedding memory immediately
+        try:
+            del clean_state, student_answers, state_dict
+        except Exception:
+            pass
+        gc.collect()
 
 
 @app_api.post("/submit-exam")
@@ -1253,13 +1453,15 @@ def submit_exam(
     exam_id_str = str(exam_record.id)
     user_id_str = str(current_user.id)
 
-    # Spawn asynchronous background grading thread (detached from client HTTP session)
-    worker_thread = threading.Thread(
-        target=grade_exam_in_background,
-        args=(exam_id_str, user_id_str, state_dict, student_answers),
-        daemon=True,
+    # Submit background grading task to bounded concurrency pool (max 3 workers)
+    # Strictly prevents PostgreSQL connection pool and Groq rate limit exhaustion
+    GRADER_POOL.submit(
+        grade_exam_in_background,
+        exam_id_str,
+        user_id_str,
+        state_dict,
+        student_answers,
     )
-    worker_thread.start()
 
     return {
         "id": exam_id_str,
