@@ -16,7 +16,7 @@ import {
   Clock,
   Trash2,
 } from "lucide-react"
-import { getExamHistory, getDocuments, getSubjects } from "../api/api"
+import { getExamHistory, getDocuments, getSubjects, getMe } from "../api/api"
 import {
   getPendingExams,
   resumePendingExam,
@@ -27,8 +27,21 @@ import {
 
 export default function Home() {
   const navigate = useNavigate()
-  const email = localStorage.getItem("user") || "Student"
-  const studentName = email.split("@")[0]
+
+  const getInitialName = () => {
+    try {
+      const explicit = localStorage.getItem("userName")
+      if (explicit && explicit.trim()) return explicit.trim()
+      const stored = JSON.parse(localStorage.getItem("userData") || "{}")
+      if (stored.full_name && stored.full_name.trim()) return stored.full_name.trim()
+      const email = localStorage.getItem("user") || ""
+      if (email.includes("@")) return email.split("@")[0]
+    } catch (_) {}
+    return "Student"
+  }
+
+  const [studentName, setStudentName] = useState(getInitialName())
+  const [isFirstSignup] = useState(() => localStorage.getItem("isNewUser") === "true")
 
   const [loading, setLoading] = useState(true)
   const [exams, setExams] = useState([])
@@ -42,19 +55,32 @@ export default function Home() {
   }
 
   useEffect(() => {
+    // Consume the first-time signup flag so subsequent logins/visits show "Welcome back"
+    if (localStorage.getItem("isNewUser") === "true") {
+      localStorage.removeItem("isNewUser")
+    }
+
     refreshPending()
     const fetchData = async () => {
       try {
         setLoading(true)
-        const [examsRes, docsRes, subsRes] = await Promise.allSettled([
+        const [examsRes, docsRes, subsRes, meRes] = await Promise.allSettled([
           getExamHistory(),
           getDocuments(),
           getSubjects(),
+          getMe(),
         ])
 
         if (examsRes.status === "fulfilled") setExams(examsRes.value.data || [])
         if (docsRes.status === "fulfilled") setDocuments(docsRes.value.data || [])
         if (subsRes.status === "fulfilled") setSubjects(subsRes.value.data || [])
+        if (meRes.status === "fulfilled" && meRes.value.data) {
+          const profile = meRes.value.data
+          if (profile.full_name && profile.full_name.trim()) {
+            setStudentName(profile.full_name.trim())
+            localStorage.setItem("userName", profile.full_name.trim())
+          }
+        }
       } catch (err) {
         console.error("Failed to load dashboard metrics:", err)
       } finally {
@@ -110,13 +136,16 @@ export default function Home() {
     .sort((a, b) => b[1] - a[1])
     .slice(0, 4)
 
+  const firstName = studentName ? studentName.trim().split(" ")[0] : "Student"
+
   return (
     <div className="w-full space-y-8">
       {/* Welcome Hero Banner */}
       <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-blue-600 via-blue-700 to-indigo-700 p-8 text-white shadow-xl shadow-blue-500/10">
         <div className="relative z-10 max-w-2xl">
           <h1 className="text-3xl font-extrabold tracking-tight sm:text-4xl">
-            Welcome back, <span className="capitalize">{studentName}</span>!
+            {isFirstSignup ? "Welcome, " : "Welcome back, "}
+            <span className="capitalize">{firstName}</span>!
           </h1>
           <p className="mt-2 text-sm text-blue-100 leading-relaxed">
             Ready to test your knowledge? Upload study documents, configure custom exam patterns,
