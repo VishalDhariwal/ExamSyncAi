@@ -245,3 +245,91 @@ export function getTrueScore(exam) {
   return exam.score !== undefined && exam.score !== null ? Number(exam.score) : 0
 }
 
+export const EVALUATING_EXAMS_KEY = "examsync_evaluating_exams"
+
+/**
+ * Tracks an exam currently being evaluated in background.
+ */
+export function trackEvaluatingExam(examId, subject = "Exam") {
+  if (!examId) return
+  try {
+    const raw = localStorage.getItem(EVALUATING_EXAMS_KEY)
+    const list = raw ? JSON.parse(raw) : []
+    const filtered = list.filter((item) => item.id !== examId)
+    filtered.push({
+      id: examId,
+      subject: subject || "Exam",
+      startedAt: new Date().toISOString(),
+    })
+    localStorage.setItem(EVALUATING_EXAMS_KEY, JSON.stringify(filtered))
+    window.dispatchEvent(new Event("evaluating-exams-updated"))
+  } catch (e) {
+    console.warn("Could not track evaluating exam:", e)
+  }
+}
+
+/**
+ * Removes an exam from background evaluation tracking once completed.
+ */
+export function stopTrackingEvaluatingExam(examId) {
+  if (!examId) return
+  try {
+    const raw = localStorage.getItem(EVALUATING_EXAMS_KEY)
+    if (!raw) return
+    const list = JSON.parse(raw)
+    const filtered = list.filter((item) => item.id !== examId)
+    localStorage.setItem(EVALUATING_EXAMS_KEY, JSON.stringify(filtered))
+    window.dispatchEvent(new Event("evaluating-exams-updated"))
+  } catch (e) {
+    console.warn("Could not stop tracking evaluating exam:", e)
+  }
+}
+
+/**
+ * Returns currently tracked background evaluation exams.
+ */
+export function getTrackedEvaluatingExams() {
+  try {
+    const raw = localStorage.getItem(EVALUATING_EXAMS_KEY)
+    return raw ? JSON.parse(raw) : []
+  } catch (e) {
+    return []
+  }
+}
+
+/**
+ * Requests browser desktop notification permissions if supported.
+ */
+export async function requestBrowserNotificationPermission() {
+  if (typeof window !== "undefined" && "Notification" in window) {
+    if (Notification.permission === "default") {
+      try {
+        await Notification.requestPermission()
+      } catch (e) {
+        // Ignore permission failure
+      }
+    }
+  }
+}
+
+/**
+ * Dispatches an HTML5 Desktop Web Notification if permitted.
+ */
+export function sendBrowserNotification(title, options = {}) {
+  if (typeof window !== "undefined" && "Notification" in window) {
+    if (Notification.permission === "granted") {
+      try {
+        return new Notification(title, {
+          icon: "/logo.png",
+          badge: "/logo.png",
+          ...options,
+        })
+      } catch (e) {
+        console.warn("Failed to fire desktop notification:", e)
+      }
+    }
+  }
+  return null
+}
+
+

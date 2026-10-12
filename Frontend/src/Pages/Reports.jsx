@@ -559,21 +559,38 @@ export default function Reports() {
                     </div>
 
                     <div className="flex items-center gap-3">
-                      <div
-                        className={`px-4 py-2 rounded-xl border font-black text-base ${scoreBadgeColor}`}
-                      >
-                        {score} / {maxScore}{" "}
-                        <span className="text-xs font-semibold ml-1">({percentage}%)</span>
-                      </div>
+                      {exam.status === "EVALUATING" ? (
+                        <div className="flex items-center gap-2">
+                          <div className="px-3.5 py-2 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 font-bold text-xs flex items-center gap-2 animate-pulse">
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />
+                            <span>Evaluating in Background...</span>
+                          </div>
+                          <button
+                            onClick={() => navigate(`/results?id=${exam.id}`)}
+                            className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs transition shadow-2xs"
+                          >
+                            Live Progress
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          <div
+                            className={`px-4 py-2 rounded-xl border font-black text-base ${scoreBadgeColor}`}
+                          >
+                            {score} / {maxScore}{" "}
+                            <span className="text-xs font-semibold ml-1">({percentage}%)</span>
+                          </div>
 
-                      <button
-                        onClick={() => setActiveDiagnosticExam(exam)}
-                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-blue-50 text-blue-700 hover:bg-blue-100/80 border border-blue-200 transition"
-                        title="Open full popup diagnostic report"
-                      >
-                        <Zap className="w-3.5 h-3.5 fill-blue-600 text-blue-600" />
-                        <span>Diagnostic Report</span>
-                      </button>
+                          <button
+                            onClick={() => setActiveDiagnosticExam(exam)}
+                            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-blue-50 text-blue-700 hover:bg-blue-100/80 border border-blue-200 transition"
+                            title="Open full popup diagnostic report"
+                          >
+                            <Zap className="w-3.5 h-3.5 fill-blue-600 text-blue-600" />
+                            <span>Diagnostic Report</span>
+                          </button>
+                        </>
+                      )}
 
                       <button
                         onClick={() => toggleExpand(exam.id)}
