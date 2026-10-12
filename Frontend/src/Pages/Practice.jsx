@@ -21,7 +21,7 @@ import {
   BookOpen,
   FileText,
 } from "lucide-react"
-import { generateExam, getSubjects, getSubjectMaterials, getMe } from "../api/api"
+import { generateExam, getSubjects, getSubjectMaterials, getMe, getDocuments } from "../api/api"
 import {
   getPendingExams,
   resumePendingExam,
@@ -108,8 +108,19 @@ export default function Practice() {
   useEffect(() => {
     const fetchSubs = async () => {
       try {
-        const res = await getSubjects()
-        const fetchedSubs = res.data || []
+        const [subsRes, docsRes] = await Promise.allSettled([
+          getSubjects(),
+          getDocuments(),
+        ])
+        const docs = docsRes.status === "fulfilled" ? (docsRes.value.data || []) : []
+        const userDocSubs = new Set(docs.map((d) => (d.subject || "").toUpperCase()))
+        const rawSubs = subsRes.status === "fulfilled" ? (subsRes.value.data || []) : []
+        const fetchedSubs = rawSubs.filter(
+          (s) =>
+            s &&
+            (userDocSubs.has(s.toUpperCase()) ||
+              (s.toUpperCase() !== "DSA" && s.toUpperCase() !== "DBMS"))
+        )
         setSubjects(fetchedSubs)
 
         const paramSub = searchParams.get("subject")

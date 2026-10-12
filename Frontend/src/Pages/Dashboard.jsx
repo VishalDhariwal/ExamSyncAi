@@ -131,11 +131,21 @@ export default function Dashboard() {
         getDocuments(),
         getSubjects(),
       ])
-      setDocuments(docsRes.data || [])
-      const subList = subsRes.data || []
+      const docs = docsRes.data || []
+      setDocuments(docs)
+      const userDocSubs = new Set(docs.map((d) => (d.subject || "").toUpperCase()))
+      const rawSubList = subsRes.data || []
+      const subList = rawSubList.filter(
+        (s) =>
+          s &&
+          (userDocSubs.has(s.toUpperCase()) ||
+            (s.toUpperCase() !== "DSA" && s.toUpperCase() !== "DBMS"))
+      )
       setSubjects(subList)
       if (subList.length > 0 && !subject) {
         setSubject(subList[0])
+      } else if (!subList.includes(subject)) {
+        setSubject(subList[0] || "")
       }
     } catch (err) {
       console.error("Failed to load dashboard data:", err)

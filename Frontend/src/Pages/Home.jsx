@@ -72,8 +72,18 @@ export default function Home() {
         ])
 
         if (examsRes.status === "fulfilled") setExams(examsRes.value.data || [])
-        if (docsRes.status === "fulfilled") setDocuments(docsRes.value.data || [])
-        if (subsRes.status === "fulfilled") setSubjects(subsRes.value.data || [])
+        const docs = docsRes.status === "fulfilled" ? docsRes.value.data || [] : []
+        setDocuments(docs)
+        if (subsRes.status === "fulfilled") {
+          const userDocSubs = new Set(docs.map((d) => (d.subject || "").toUpperCase()))
+          const cleanedSubs = (subsRes.value.data || []).filter(
+            (s) =>
+              s &&
+              (userDocSubs.has(s.toUpperCase()) ||
+                (s.toUpperCase() !== "DSA" && s.toUpperCase() !== "DBMS"))
+          )
+          setSubjects(cleanedSubs)
+        }
         if (meRes.status === "fulfilled" && meRes.value.data) {
           const profile = meRes.value.data
           if (profile.full_name && profile.full_name.trim()) {
