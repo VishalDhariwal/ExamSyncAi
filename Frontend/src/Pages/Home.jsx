@@ -21,6 +21,8 @@ import {
   getPendingExams,
   resumePendingExam,
   removePendingExam,
+  getTrueMaxScore,
+  getTrueScore,
 } from "../utils/examStorage"
 
 export default function Home() {
@@ -71,8 +73,9 @@ export default function Home() {
     totalExams > 0
       ? Math.round(
           exams.reduce((sum, e) => {
-            const max = e.max_score || 40
-            return sum + (e.score / max) * 100
+            const max = getTrueMaxScore(e)
+            const score = getTrueScore(e)
+            return sum + (score / max) * 100
           }, 0) / totalExams
         )
       : null
@@ -86,7 +89,7 @@ export default function Home() {
       return { subject: sub, attempts: 0, avg: 0, status: "Not Tested" }
     }
     const avg = Math.round(
-      subExams.reduce((sum, e) => sum + (e.score / (e.max_score || 40)) * 100, 0) /
+      subExams.reduce((sum, e) => sum + (getTrueScore(e) / getTrueMaxScore(e)) * 100, 0) /
         subExams.length
     )
     const status = avg >= 75 ? "High Proficiency" : avg >= 50 ? "Proficient" : "Needs Review"
@@ -446,7 +449,7 @@ export default function Home() {
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-50 text-blue-700 border border-blue-100">
-                      {exam.score} / {exam.max_score}
+                      {getTrueScore(exam)} / {getTrueMaxScore(exam)}
                     </span>
                   </div>
                 </div>
