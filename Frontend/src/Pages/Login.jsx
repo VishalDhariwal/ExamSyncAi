@@ -33,6 +33,11 @@ export default function Login() {
       return
     }
 
+    if (isSignup && !fullName.trim()) {
+      setError("Please enter your name.")
+      return
+    }
+
     if (isSignup && password.length < 6) {
       setError("Password must be at least 6 characters.")
       return
@@ -48,17 +53,22 @@ export default function Login() {
           password,
           full_name: fullName.trim() || undefined,
         })
+        localStorage.setItem("isNewUser", "true")
       } else {
         res = await loginUser({
           email: email.trim(),
           password,
         })
+        localStorage.removeItem("isNewUser")
       }
 
       // Store JWT token and user identifier securely
       localStorage.setItem("token", res.data.access_token)
       localStorage.setItem("user", res.data.user.email)
       localStorage.setItem("userData", JSON.stringify(res.data.user))
+      const displayName =
+        res.data.user?.full_name || fullName.trim() || res.data.user?.email.split("@")[0] || "Student"
+      localStorage.setItem("userName", displayName)
 
       navigate("/dashboard")
     } catch (err) {
