@@ -569,21 +569,14 @@ def list_subjects(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Returns all unique classes/subjects from the student's uploaded study materials and exam attempts."""
+    """Returns all unique classes/subjects from the student's uploaded study materials."""
     user_subjects = (
         db.query(UserDocument.subject)
         .filter(UserDocument.user_id == current_user.id)
         .distinct()
         .all()
     )
-    exam_subjects = (
-        db.query(ExamHistory.subject)
-        .filter(ExamHistory.user_id == current_user.id)
-        .distinct()
-        .all()
-    )
-    combined = {s[0] for s in user_subjects if s[0]} | {s[0] for s in exam_subjects if s[0]}
-    all_subjects = sorted(list(combined))
+    all_subjects = sorted(list({s[0] for s in user_subjects if s[0]}))
     return all_subjects
 
 

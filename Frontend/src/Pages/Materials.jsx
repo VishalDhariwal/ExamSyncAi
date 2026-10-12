@@ -69,8 +69,14 @@ export default function Materials() {
       const docs = docsRes.data || []
       setDocuments(docs)
 
-      const fetchedSubs = subsRes.data || []
       const docSubs = docs.map((d) => d.subject).filter(Boolean)
+      const userDocSubs = new Set(docSubs.map((s) => s.toUpperCase()))
+      const fetchedSubs = (subsRes.data || []).filter(
+        (s) =>
+          s &&
+          (userDocSubs.has(s.toUpperCase()) ||
+            (s.toUpperCase() !== "DSA" && s.toUpperCase() !== "DBMS"))
+      )
       const combinedTags = Array.from(
         new Set([...fetchedSubs, ...docSubs])
       ).sort()

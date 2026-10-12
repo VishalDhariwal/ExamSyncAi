@@ -99,7 +99,11 @@ export default function Reports() {
       try {
         const res = await getSubjects()
         if (res.data && Array.isArray(res.data)) {
-          setAvailableSubjects(res.data)
+          setAvailableSubjects(
+            res.data.filter(
+              (s) => s && s.toUpperCase() !== "DSA" && s.toUpperCase() !== "DBMS"
+            )
+          )
         }
       } catch (err) {
         console.warn("Failed to fetch subjects list:", err)
