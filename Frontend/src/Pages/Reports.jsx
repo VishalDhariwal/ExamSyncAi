@@ -142,13 +142,11 @@ export default function Reports() {
   const sortedWeakTopics = Object.values(topicFrequency).sort((a, b) => b.count - a.count)
   const allWeakTopics = sortedWeakTopics.map((item) => item.topic)
 
-  // Combined list of all available subjects (from API + exam history + standard courses)
+  // Combined list of all available subjects (from API + exam history)
   const allKnownSubjects = Array.from(
     new Set([
       ...availableSubjects,
       ...exams.map((e) => e.subject).filter(Boolean),
-      "DBMS",
-      "DSA",
     ])
   ).sort()
 
@@ -254,7 +252,7 @@ export default function Reports() {
       const withWeak = allKnownSubjects.find(
         (s) => getWeakTopicsForSubject(s).length > 0
       )
-      targetSubj = withWeak || modalSubject || allKnownSubjects[0] || "DBMS"
+      targetSubj = withWeak || modalSubject || allKnownSubjects[0] || ""
     }
     setModalSubject(targetSubj)
     setSelectedTopics([])

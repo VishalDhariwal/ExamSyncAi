@@ -39,8 +39,8 @@ export default function Materials() {
   const [selectedSubjectFilter, setSelectedSubjectFilter] = useState("ALL")
 
   // Available Subject Tags & Tag Selector State
-  const [availableTags, setAvailableTags] = useState(["DSA", "DBMS"])
-  const [selectedTag, setSelectedTag] = useState("DSA")
+  const [availableTags, setAvailableTags] = useState([])
+  const [selectedTag, setSelectedTag] = useState("")
   const [isNewTagMode, setIsNewTagMode] = useState(false)
   const [newTagName, setNewTagName] = useState("")
 
@@ -72,11 +72,16 @@ export default function Materials() {
       const fetchedSubs = subsRes.data || []
       const docSubs = docs.map((d) => d.subject).filter(Boolean)
       const combinedTags = Array.from(
-        new Set(["DSA", "DBMS", ...fetchedSubs, ...docSubs])
+        new Set([...fetchedSubs, ...docSubs])
       ).sort()
 
       setAvailableTags(combinedTags)
-      setSelectedTag((prev) => (prev && combinedTags.includes(prev) ? prev : combinedTags[0] || "DSA"))
+      if (combinedTags.length === 0) {
+        setIsNewTagMode(true)
+        setSelectedTag("")
+      } else {
+        setSelectedTag((prev) => (prev && combinedTags.includes(prev) ? prev : combinedTags[0]))
+      }
     } catch (err) {
       console.error("Failed to fetch documents:", err)
     } finally {
@@ -535,13 +540,15 @@ export default function Materials() {
                       Subject / Course Tag <span className="text-red-500">*</span>
                     </label>
                     {isNewTagMode ? (
-                      <button
-                        type="button"
-                        onClick={() => setIsNewTagMode(false)}
-                        className="text-[11px] font-bold text-blue-600 hover:text-blue-700 transition"
-                      >
-                        &larr; Choose Existing Tag
-                      </button>
+                      availableTags.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setIsNewTagMode(false)}
+                          className="text-[11px] font-bold text-blue-600 hover:text-blue-700 transition"
+                        >
+                          &larr; Choose Existing Tag
+                        </button>
+                      )
                     ) : (
                       <button
                         type="button"

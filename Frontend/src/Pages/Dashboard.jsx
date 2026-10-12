@@ -51,7 +51,7 @@ const PRESETS = {
 export default function Dashboard() {
   const navigate = useNavigate()
 
-  const [subject, setSubject] = useState("DBMS")
+  const [subject, setSubject] = useState("")
   const [subjects, setSubjects] = useState([])
   const [documents, setDocuments] = useState([])
   const [activeTab, setActiveTab] = useState("hub")
